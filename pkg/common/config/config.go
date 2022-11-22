@@ -29,9 +29,6 @@ var (
 	GlobalServerConfig *ServerConfig                // the global ServerConfig
 	DefaultPV          *apiv1.PersistentVolume      // the global default pv instance
 	DefaultPVC         *apiv1.PersistentVolumeClaim // the global default pvc instance
-	DefaultJobTemplate map[string][]byte            // the global default job template
-
-	defaultJobTemplatePath = "./config/server/default/job/job_template.yaml"
 
 	DefaultRunYamlPath    = "./run.yaml"
 	serverDefaultConfPath = "./config/server/default/paddleserver.yaml"
@@ -52,7 +49,6 @@ type ServerConfig struct {
 	Fs        FsServerConf                   `yaml:"fs"`
 	ImageConf ImageConfig                    `yaml:"imageRepository"`
 	Monitor   PrometheusConfig               `yaml:"monitor"`
-	Metrics   MetricsConfig                  `yaml:"metrics"`
 }
 
 type StorageConfig struct {
@@ -87,19 +83,17 @@ type JobConfig struct {
 	JobLoopPeriod     int `yaml:"jobLoopPeriod"`
 	// SyncClusterQueue defines whether aware cluster resource or not, such as queue
 	SyncClusterQueue bool `yaml:"syncClusterQueue"`
-	// DefaultJobYamlPath defines file path that stores all default templates in one yaml
-	DefaultJobYamlPath string `yaml:"defaultJobYamlPath"`
-	IsSingleCluster    bool   `yaml:"isSingleCluster"`
+	// DefaultJobYamlDir is directory that stores default template yaml files for job
+	DefaultJobYamlDir string `yaml:"defaultJobYamlDir"`
+	IsSingleCluster   bool   `yaml:"isSingleCluster"`
 }
 
 type FsServerConf struct {
-	DefaultPVPath        string        `yaml:"defaultPVPath"`
-	DefaultPVCPath       string        `yaml:"defaultPVCPath"`
-	LinkMetaDirPrefix    string        `yaml:"linkMetaDirPrefix"`
-	MountPodExpire       time.Duration `yaml:"mountPodExpire"`
-	MountPodIntervalTime time.Duration `yaml:"mountPodIntervalTime"`
-	// ServicePort is used to call paddleflow api-server in k8s, the default is the same as ApiServerConfig.Port
-	ServicePort int `yaml:"servicePort"`
+	DefaultPVPath             string        `yaml:"defaultPVPath"`
+	DefaultPVCPath            string        `yaml:"defaultPVCPath"`
+	LinkMetaDirPrefix         string        `yaml:"linkMetaDirPrefix"`
+	MountPodExpire            time.Duration `yaml:"mountPodExpire"`
+	CleanMountPodIntervalTime time.Duration `yaml:"cleanMountPodIntervalTime"`
 }
 
 type ReclaimConfig struct {
@@ -122,9 +116,4 @@ type ImageConfig struct {
 type PrometheusConfig struct {
 	Server              string `yaml:"server"`
 	ExporterServicePort int    `yaml:"exporterServicePort"`
-}
-
-type MetricsConfig struct {
-	Port   int  `yaml:"port"`
-	Enable bool `yaml:"enable"`
 }

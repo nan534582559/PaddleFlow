@@ -38,7 +38,7 @@ type _Client struct {
 }
 
 func NewClient(fsID string, c *core.PaddleFlowClient, token string) (*_Client, error) {
-	fsName, userName, err := utils.GetFsNameAndUserNameByFsID(fsID)
+	userName, fsName, err := utils.GetFsNameAndUserNameByFsID(fsID)
 	if err != nil {
 		return nil, err
 	}

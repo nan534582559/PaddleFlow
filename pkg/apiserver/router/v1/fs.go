@@ -58,6 +58,7 @@ func (pr *PFSRouter) AddRouter(r chi.Router) {
 	r.Post("/fsCache", pr.createFSCacheConfig)
 	r.Get("/fsCache/{fsName}", pr.getFSCacheConfig)
 	r.Delete("/fsCache/{fsName}", pr.deleteFSCacheConfig)
+	r.Post("/fsCache/report", pr.fsCacheReport)
 }
 
 var URLPrefix = map[string]bool{
@@ -70,9 +71,7 @@ var URLPrefix = map[string]bool{
 	fsCommon.GlusterFSType: true,
 }
 
-const FsNameMaxLen = 63
-
-var FsnamePlusUsernameMaxLen int = 63 - len("fs-") - len("-")
+const FsNameMaxLen = 100
 
 // obsoleted funcs: create PVC code can be found in commit 23e7038cecd7bfa9acdc80bbe1d62d904dbe1568
 
@@ -144,12 +143,7 @@ func validateCreateFileSystem(ctx *logger.RequestContext, req *api.CreateFileSys
 		ctx.ErrorMessage = common.InvalidField("name", fmt.Sprintf("fsName[%s] must be letters or numbers and fsName maximum length is %d", req.Name, FsNameMaxLen)).Error()
 		return common.InvalidField("name", fmt.Sprintf("fsName[%s] must be letters or numbers and fsName maximum length is %d", req.Name, FsNameMaxLen))
 	}
-	if len(req.Username)+len(req.Name) > FsnamePlusUsernameMaxLen {
-		ctx.Logging().Errorf("The sum of the lengths of username[%s] and fsName[%s] should be less than %d", req.Username, req.Name, FsnamePlusUsernameMaxLen)
-		ctx.ErrorCode = common.FileSystemNameFormatError
-		ctx.ErrorMessage = common.InvalidField("username and name", fmt.Sprintf("The sum of the lengths of username[%s] and fsName[%s] should be less than %d", req.Username, req.Name, FsnamePlusUsernameMaxLen)).Error()
-		return common.InvalidField("name", fmt.Sprintf("The sum of the lengths of username[%s] and fsName[%s] should be less than %d", req.Username, req.Name, FsNameMaxLen))
-	}
+
 	urlArr := strings.Split(req.Url, ":")
 	if len(urlArr) < 2 {
 		ctx.Logging().Errorf("[%s] is not a correct file-system url", req.Url)
@@ -184,7 +178,7 @@ func validateCreateFileSystem(ctx *logger.RequestContext, req *api.CreateFileSys
 		return err
 	}
 
-	if fileSystemType == fsCommon.MockType || fileSystemType == fsCommon.LocalType {
+	if fileSystemType == fsCommon.MockType {
 		return nil
 	}
 	fsType, serverAddress, subPath := common.InformationFromURL(req.Url, req.Properties)
@@ -243,6 +237,11 @@ func checkProperties(fsType string, req *api.CreateFileSystemRequest) error {
 			}
 		} else {
 			return common.InvalidField("properties", "not correct hdfs properties")
+		}
+		return nil
+	case fsCommon.LocalType:
+		if req.Properties["debug"] != "true" {
+			return common.InvalidField("debug", "properties key[debug] must true")
 		}
 		return nil
 	case fsCommon.S3Type:

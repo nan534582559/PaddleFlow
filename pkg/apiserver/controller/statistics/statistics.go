@@ -19,15 +19,14 @@ package statistics
 import (
 	"fmt"
 
-	prometheusModel "github.com/prometheus/common/model"
+	"github.com/prometheus/common/model"
 
 	"github.com/PaddlePaddle/PaddleFlow/pkg/apiserver/common"
+	"github.com/PaddlePaddle/PaddleFlow/pkg/apiserver/models"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/consts"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/logger"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/schema"
-	"github.com/PaddlePaddle/PaddleFlow/pkg/model"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/monitor"
-	"github.com/PaddlePaddle/PaddleFlow/pkg/storage"
 )
 
 var metricNameList = [...]string{
@@ -144,8 +143,8 @@ func getMetricByType(metricType string) (monitor.MetricInterface, error) {
 	return metric, nil
 }
 
-func getClusterTypeByJob(ctx *logger.RequestContext, jobID string) (string, *model.Job, error) {
-	job, err := storage.Job.GetJobByID(jobID)
+func getClusterTypeByJob(ctx *logger.RequestContext, jobID string) (string, *models.Job, error) {
+	job, err := models.GetJobByID(jobID)
 	if err != nil {
 		ctx.ErrorCode = common.JobNotFound
 		ctx.Logging().Errorln(err.Error())
@@ -153,17 +152,17 @@ func getClusterTypeByJob(ctx *logger.RequestContext, jobID string) (string, *mod
 	}
 	if ok := checkJobPermission(ctx, &job); !ok {
 		ctx.ErrorCode = common.AccessDenied
-		ctx.Logging().Errorf("get the job[%s] auth failed.", jobID)
+		ctx.Logging().Errorf("get the job[%s] auth failed. error:%s", jobID, err.Error())
 		return "", nil, common.NoAccessError(ctx.UserName, common.ResourceTypeJob, jobID)
 	}
 
-	queue, err := storage.Queue.GetQueueByID(job.QueueID)
+	queue, err := models.GetQueueByID(job.QueueID)
 	if err != nil {
 		ctx.ErrorCode = common.QueueNameNotFound
 		ctx.Logging().Errorln(err.Error())
 		return "", nil, common.NotFoundError(common.ResourceTypeQueue, job.QueueID)
 	}
-	cluster, err := storage.Cluster.GetClusterById(queue.ClusterId)
+	cluster, err := models.GetClusterById(queue.ClusterId)
 	if err != nil {
 		ctx.ErrorCode = common.ClusterNotFound
 		ctx.Logging().Errorln(err.Error())
@@ -172,8 +171,8 @@ func getClusterTypeByJob(ctx *logger.RequestContext, jobID string) (string, *mod
 	return cluster.ClusterType, &job, nil
 }
 
-func convertResultToDetailResponse(ctx *logger.RequestContext, result prometheusModel.Value, response *JobDetailStatisticsResponse, metricName string) error {
-	data, ok := result.(prometheusModel.Matrix)
+func convertResultToDetailResponse(ctx *logger.RequestContext, result model.Value, response *JobDetailStatisticsResponse, metricName string) error {
+	data, ok := result.(model.Matrix)
 	if !ok {
 		ctx.Logging().Errorf("convert result to matrix failed")
 		return fmt.Errorf("convert result to matrix failed")
@@ -218,6 +217,6 @@ func convertResultToResponse(response *JobStatisticsResponse, result float64, me
 	}
 }
 
-func checkJobPermission(ctx *logger.RequestContext, job *model.Job) bool {
+func checkJobPermission(ctx *logger.RequestContext, job *models.Job) bool {
 	return common.IsRootUser(ctx.UserName) || ctx.UserName == job.UserName
 }

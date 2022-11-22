@@ -21,9 +21,8 @@ import (
 
 	"github.com/sirupsen/logrus"
 
+	"github.com/PaddlePaddle/PaddleFlow/pkg/apiserver/models"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/resources"
-	"github.com/PaddlePaddle/PaddleFlow/pkg/common/schema"
-	"github.com/PaddlePaddle/PaddleFlow/pkg/model"
 )
 
 // QueueID is UID type, serves as unique ID for each queue
@@ -48,8 +47,6 @@ type QueueInfo struct {
 	// SortPolicy for queue job
 	SortPolicyNames []string
 	SortPolicies    []SortPolicy
-	// Location for queue affinity
-	Location map[string]string
 
 	// SchedulerName for queue job
 	SchedulerName string
@@ -58,23 +55,19 @@ type QueueInfo struct {
 	Permissions []string
 
 	// Resource range of queue
-	MaxResources  *resources.Resource
-	MinResources  *resources.Resource
-	UsedResources *resources.Resource
+	Max  *resources.Resource
+	Min  *resources.Resource
+	Used *resources.Resource
 }
 
-func NewQueueInfo(q model.Queue) *QueueInfo {
+func NewQueueInfo(q models.Queue) *QueueInfo {
 	return &QueueInfo{
 		UID:             QueueID(q.ID),
 		Name:            q.Name,
 		ClusterID:       ClusterID(q.ClusterId),
-		Type:            q.QuotaType,
 		Status:          q.Status,
 		SortPolicyNames: q.SchedulingPolicy,
 		SortPolicies:    NewRegistry(q.SchedulingPolicy),
-		MaxResources:    q.MaxResources,
-		MinResources:    q.MinResources,
-		Location:        q.Location,
 	}
 }
 
@@ -92,20 +85,6 @@ func (q *QueueInfo) JobOrderFn(l, r interface{}) bool {
 		return lv.ID < rv.ID
 	}
 	return lv.CreateTime.Before(rv.CreateTime)
-}
-
-// QueueSyncInfo contains queue sync info
-type QueueSyncInfo struct {
-	Name        string
-	Namespace   string
-	Labels      map[string]string
-	Status      string
-	QuotaType   string
-	MaxResource *resources.Resource
-	MinResource *resources.Resource
-	Action      schema.ActionType
-	Message     string
-	RetryTimes  int
 }
 
 type SortPolicy interface {

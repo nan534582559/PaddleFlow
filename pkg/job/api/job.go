@@ -22,9 +22,9 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/PaddlePaddle/PaddleFlow/pkg/apiserver/models"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/resources"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/schema"
-	"github.com/PaddlePaddle/PaddleFlow/pkg/model"
 )
 
 type PFJobInterface interface {
@@ -50,20 +50,19 @@ type PFJob struct {
 	// ClusterID and QueueID of job
 	ClusterID    ClusterID
 	QueueID      QueueID
-	QueueName    string
 	Resource     *resources.Resource
 	Priority     int32
 	MinAvailable int32
 	// PriorityClassName defines job info on cluster
 	PriorityClassName string
-
+	// storage resource for job
+	FSID string
 	// Tasks for TypeDistributed job
-	Tasks []schema.Member
+	Tasks []models.Member
 	// ExtRuntimeConf define extra runtime conf
 	ExtRuntimeConf []byte
 	// ExtensionTemplate records the extension template of job
-	ExtensionTemplate []byte
-	IsCustomYaml      bool
+	ExtensionTemplate string
 	// Conf for job
 	Conf schema.Conf
 
@@ -81,7 +80,7 @@ type PFJob struct {
 	EndTIme     time.Time
 }
 
-func NewJobInfo(job *model.Job) (*PFJob, error) {
+func NewJobInfo(job *models.Job) (*PFJob, error) {
 	if job == nil {
 		return nil, fmt.Errorf("job is nil")
 	}
@@ -95,21 +94,17 @@ func NewJobInfo(job *model.Job) (*PFJob, error) {
 		Framework:         job.Framework,
 		ClusterID:         ClusterID(job.Config.GetClusterID()),
 		QueueID:           QueueID(job.QueueID),
-		QueueName:         job.Config.GetQueueName(),
+		FSID:              job.Config.GetFS(),
 		UserName:          job.UserName,
 		Conf:              *job.Config,
 		Labels:            make(map[string]string),
 		Annotations:       make(map[string]string),
 		Resource:          job.Resource,
 		Tasks:             job.Members,
-		ExtensionTemplate: []byte(job.ExtensionTemplate),
+		ExtensionTemplate: job.ExtensionTemplate,
 	}
 	log.Debugf("gererated pfjob is: %#v", pfjob)
 	return pfjob, nil
-}
-
-func (pfj *PFJob) NamespacedName() string {
-	return fmt.Sprintf("%s/%s", pfj.Namespace, pfj.ID)
 }
 
 func (pfj *PFJob) UpdateLabels(labels map[string]string) {
@@ -129,56 +124,3 @@ func (pfj *PFJob) UpdateAnnotations(annotations map[string]string) {
 func (pfj *PFJob) UpdateJobPriority(priorityClassName string) {
 	pfj.PriorityClassName = priorityClassName
 }
-
-func (pfj *PFJob) GetID() string {
-	return pfj.ID
-}
-
-type JobSyncInfo struct {
-	ID               string
-	Namespace        string
-	ParentJobID      string
-	FrameworkVersion schema.FrameworkVersion
-	Status           schema.JobStatus
-	RuntimeInfo      interface{}
-	RuntimeStatus    interface{}
-	Annotations      map[string]string
-	Message          string
-	Action           schema.ActionType
-	RetryTimes       int
-}
-
-func (js *JobSyncInfo) String() string {
-	return fmt.Sprintf("job id: %s, parentJobID: %s, framework: %s, status: %s, message: %s",
-		js.ID, js.ParentJobID, js.FrameworkVersion, js.Status, js.Message)
-}
-
-type TaskSyncInfo struct {
-	ID         string
-	Name       string
-	Namespace  string
-	JobID      string
-	NodeName   string
-	MemberRole schema.MemberRole
-	Status     schema.TaskStatus
-	Message    string
-	PodStatus  interface{}
-	Action     schema.ActionType
-	RetryTimes int
-}
-
-// FinishedJobInfo contains gc job info
-type FinishedJobInfo struct {
-	Namespace        string
-	Name             string
-	Duration         time.Duration
-	FrameworkVersion schema.FrameworkVersion
-}
-
-type StatusInfo struct {
-	OriginStatus string
-	Status       schema.JobStatus
-	Message      string
-}
-
-type GetStatusFunc func(interface{}) (StatusInfo, error)

@@ -24,9 +24,8 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/PaddlePaddle/PaddleFlow/pkg/apiserver/common"
+	"github.com/PaddlePaddle/PaddleFlow/pkg/apiserver/models"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/uuid"
-	"github.com/PaddlePaddle/PaddleFlow/pkg/model"
-	"github.com/PaddlePaddle/PaddleFlow/pkg/storage"
 )
 
 type WebsocketManager struct {
@@ -82,7 +81,7 @@ func (manager *WebsocketManager) GetGroupData() {
 		}
 		nextTime := time.Now()
 		log.Infof("start get data")
-		jobList, err := storage.Job.ListJobByUpdateTime(UpdateTime.Format(model.TimeFormat))
+		jobList, err := models.ListJobByUpdateTime(UpdateTime.Format(models.TimeFormat))
 		if err != nil {
 			log.Errorf("list job failed for websocket to send job")
 			continue

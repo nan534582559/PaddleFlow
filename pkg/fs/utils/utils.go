@@ -26,11 +26,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
-
-	"github.com/shirou/gopsutil/v3/cpu"
-	"github.com/shirou/gopsutil/v3/disk"
-	"github.com/shirou/gopsutil/v3/mem"
 
 	"github.com/PaddlePaddle/PaddleFlow/pkg/apiserver/middleware"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/logger"
@@ -83,21 +78,6 @@ func GetSourceMountPathByPod(podUID, volumeName string) string {
 func GetVolumeBindMountPathByPod(podUID, volumeName string) string {
 	return fmt.Sprintf("%s/pods/%s/volumes/%s/%s/mount", GetKubeletDataPath(),
 		podUID, VolumePluginName, volumeName)
-}
-
-func GetSubPathSourcePath(volumePath, subpath string) string {
-	return filepath.Join(volumePath, subpath)
-}
-
-// default value: /var/lib/kubelet/pods/{podUID}/volumes-subpaths/{volumeName}/{containerName}/{volumeMountIndex}
-func GetSubPathTargetPath(podUID string, volumeName string, containerName string, volumeMountIndex int) string {
-	return fmt.Sprintf("%s/pods/%s/volume-subpaths/%s/%s/%d", GetKubeletDataPath(),
-		podUID, volumeName, containerName, volumeMountIndex)
-}
-
-// default value: /var/lib/kubelet/pods/{podUID}/volumes/{volumePluginName}/{volumeName}/source
-func GetSourceMountPath(pathPrefix string) string {
-	return filepath.Join(pathPrefix, "source")
 }
 
 func GetKubeletDataPath() string {
@@ -231,7 +211,7 @@ func FsIDToFsNameUsername(fsID string) (fsName, username string) {
 	return
 }
 
-func GetFsNameAndUserNameByFsID(fsID string) (fsName, username string, err error) {
+func GetFsNameAndUserNameByFsID(fsID string) (userName, fsName string, err error) {
 	fsArray := strings.Split(fsID, "-")
 	if len(fsArray) < 3 {
 		err = fmt.Errorf("fsID[%s] is not valid", fsID)
@@ -239,12 +219,12 @@ func GetFsNameAndUserNameByFsID(fsID string) (fsName, username string, err error
 	}
 	if len(fsArray) > 3 {
 		// such as fs-root-v-xxxx
-		fsName = strings.Join(fsArray[2:], "-")
-		username = fsArray[1]
+		fsName = strings.Join(fsArray[2:len(fsArray)], "-")
+		userName = fsArray[1]
 		return
 	}
-	username = fsArray[1]
-	fsName = fsArray[2]
+	userName = strings.Join(fsArray[1:len(fsArray)-1], "")
+	fsName = fsArray[len(fsArray)-1]
 	return
 }
 
@@ -276,20 +256,4 @@ func ProcessCacheConfig(fsCacheBase64 string) (model.FSCacheConfig, error) {
 		return model.FSCacheConfig{}, err
 	}
 	return cacheConfig, nil
-}
-
-func GetCpuPercent() float64 {
-	percent, _ := cpu.Percent(time.Second, false)
-	return percent[0]
-}
-
-func GetMemPercent() (uint64, float64) {
-	memInfo, _ := mem.VirtualMemory()
-	return memInfo.Available / 1024 / 1024, memInfo.UsedPercent
-}
-
-func GetDiskPercent() float64 {
-	parts, _ := disk.Partitions(true)
-	diskInfo, _ := disk.Usage(parts[0].Mountpoint)
-	return diskInfo.UsedPercent
 }

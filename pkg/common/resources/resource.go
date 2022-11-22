@@ -19,12 +19,11 @@ package resources
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 )
 
 const (
 	ResCPU     = "cpu"
-	ResMemory  = "memory"
+	ResMemory  = "mem"
 	ResStorage = "storage"
 )
 
@@ -65,7 +64,7 @@ func NewResourceFromMap(resourceInfo map[string]string) (*Resource, error) {
 func (r Resource) MarshalJSON() ([]byte, error) {
 	res := &struct {
 		CPU             string            `json:"cpu"`
-		Mem             string            `json:"memory"`
+		Mem             string            `json:"mem"`
 		Storage         string            `json:"storage,omitempty"`
 		ScalarResources map[string]string `json:"scalarResources,omitempty"`
 	}{
@@ -91,8 +90,7 @@ func (r Resource) MarshalJSON() ([]byte, error) {
 func (r *Resource) UnmarshalJSON(value []byte) error {
 	res := &struct {
 		CPU             string            `json:"cpu,omitempty"`
-		Mem             string            `json:"mem,omitempty"` // deprecated
-		Memory          string            `json:"memory,omitempty"`
+		Mem             string            `json:"mem,omitempty"`
 		Storage         string            `json:"storage,omitempty"`
 		ScalarResources map[string]string `json:"scalarResources,omitempty"`
 	}{
@@ -104,12 +102,7 @@ func (r *Resource) UnmarshalJSON(value []byte) error {
 		return err
 	}
 	res.ScalarResources[ResCPU] = res.CPU
-	if res.Mem != "" {
-		res.ScalarResources[ResMemory] = res.Mem
-	} else {
-		res.ScalarResources[ResMemory] = res.Memory
-	}
-
+	res.ScalarResources[ResMemory] = res.Mem
 	if res.Storage != "" {
 		res.ScalarResources[ResStorage] = res.Storage
 	}
@@ -119,23 +112,6 @@ func (r *Resource) UnmarshalJSON(value []byte) error {
 	}
 	*r = *rr
 	return nil
-}
-
-func (r *Resource) ToMap() map[string]interface{} {
-	res := make(map[string]interface{})
-	for key, val := range r.Resources {
-		switch key {
-		case ResCPU:
-			res[ResCPU] = val.MilliString()
-		case ResMemory:
-			res[ResMemory] = val.MemString()
-		case ResStorage:
-			res[ResStorage] = val.MemString()
-		default:
-			res[key] = val.String()
-		}
-	}
-	return res
 }
 
 func (r Resource) String() string {
@@ -179,39 +155,6 @@ func (r *Resource) Memory() Quantity {
 	return 0
 }
 
-func (r *Resource) Storage() Quantity {
-	if r != nil && r.Resources != nil {
-		return r.Resources[ResStorage]
-	}
-	return 0
-}
-
-// ScalarResources return scalar resources by prefix, if prefix is empty, return all
-func (r *Resource) ScalarResources(prefix string) map[string]Quantity {
-	quans := map[string]Quantity{}
-	if r != nil && r.Resources != nil {
-		for res, quan := range r.Resources {
-			switch res {
-			case ResMemory, ResCPU, ResStorage:
-			// pass
-			default:
-				if strings.HasPrefix(res, prefix) {
-					quans[res] = quan
-				}
-			}
-		}
-	}
-	return quans
-}
-
-// Resource return all resources
-func (r *Resource) Resource() map[string]Quantity {
-	if r.Resources == nil {
-		return make(map[string]Quantity)
-	}
-	return r.Resources
-}
-
 func (r *Resource) IsNegative() bool {
 	isNegative := false
 	if r != nil {
@@ -223,19 +166,6 @@ func (r *Resource) IsNegative() bool {
 		}
 	}
 	return isNegative
-}
-
-func (r *Resource) IsZero() bool {
-	isZero := true
-	if r != nil {
-		for _, rQuantity := range r.Resources {
-			if rQuantity > 0 {
-				isZero = false
-				break
-			}
-		}
-	}
-	return isZero
 }
 
 // Clone Return a deep copy of the resource it is called on.

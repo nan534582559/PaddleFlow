@@ -27,9 +27,7 @@ import (
 	"github.com/PaddlePaddle/PaddleFlow/pkg/apiserver/models"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/logger"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/schema"
-	runtime "github.com/PaddlePaddle/PaddleFlow/pkg/job/runtime_v2"
-	"github.com/PaddlePaddle/PaddleFlow/pkg/model"
-	"github.com/PaddlePaddle/PaddleFlow/pkg/storage"
+	"github.com/PaddlePaddle/PaddleFlow/pkg/job/runtime"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/trace_logger"
 )
 
@@ -144,7 +142,7 @@ func GetRunLog(ctx *logger.RequestContext, runID string, request GetRunLogReques
 			LogPageSize:     request.PageSize,
 			LogPageNo:       request.PageNo,
 		}
-		jobLogInfo, err := runtimeSvc.GetLog(jobLogRequest, schema.MixedLogRequest{})
+		jobLogInfo, err := runtimeSvc.GetJobLog(jobLogRequest)
 		if err != nil {
 			ctx.Logging().Errorf("jobID[%s] get queue[%s] failed. error:%s.", job.ID, job.QueueID, err.Error())
 			return nil, err
@@ -154,20 +152,20 @@ func GetRunLog(ctx *logger.RequestContext, runID string, request GetRunLogReques
 	return response, nil
 }
 
-func getJobListByRunID(ctx *logger.RequestContext, runID string, jobID string) ([]model.Job, error) {
-	jobList, err := storage.Job.GetJobsByRunID(runID, jobID)
+func getJobListByRunID(ctx *logger.RequestContext, runID string, jobID string) ([]models.Job, error) {
+	jobList, err := models.GetJobsByRunID(runID, jobID)
 	if err != nil {
 		return nil, err
 	}
 	return jobList, nil
 }
 
-func getClusterQueueByQueueID(ctx *logger.RequestContext, queueID string) (*model.ClusterInfo, *model.Queue, error) {
-	queue, err := storage.Queue.GetQueueByID(queueID)
+func getClusterQueueByQueueID(ctx *logger.RequestContext, queueID string) (*models.ClusterInfo, *models.Queue, error) {
+	queue, err := models.GetQueueByID(queueID)
 	if err != nil {
 		return nil, nil, err
 	}
-	clusterInfo, err := storage.Cluster.GetClusterById(queue.ClusterId)
+	clusterInfo, err := models.GetClusterById(queue.ClusterId)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -57,7 +57,7 @@ func NewStepRuntime(name, fullName string, step *schema.WorkflowSourceStep, seq 
 	}
 
 	jobName := generateJobName(config.runID, step.GetName(), seq)
-	job := NewPaddleFlowJob(jobName, srt.getWorkFlowStep().DockerEnv, srt.userName, srt.receiveEventChildren,
+	job := NewPaddleFlowJob(jobName, srt.getWorkFlowStep().DockerEnv, srt.receiveEventChildren,
 		srt.runConfig.mainFS, srt.getWorkFlowStep().ExtraFS)
 	srt.job = job
 
@@ -602,12 +602,10 @@ func (srt *StepRuntime) startJob() (err error) {
 		return err
 	}
 
-	if srt.getWorkFlowStep().Cache.Enable {
-		err = srt.logCache()
-		if err != nil {
-			// 如果 cache 信息存储失败，只打印日志，不做额外处理
-			srt.logger.Errorf(err.Error())
-		}
+	err = srt.logCache()
+	if err != nil {
+		// 如果 cache 信息存储失败，只打印日志，不做额外处理
+		srt.logger.Errorf(err.Error())
 	}
 
 	return

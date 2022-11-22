@@ -23,6 +23,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
+	"github.com/PaddlePaddle/PaddleFlow/pkg/fs/client/base"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/fs/client/cache"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/fs/client/meta"
 	ufslib "github.com/PaddlePaddle/PaddleFlow/pkg/fs/client/ufs"
@@ -55,13 +56,14 @@ type fileReader struct {
 	inode  Ino
 	size   int64
 	flags  uint32
+	name   string
 	path   string
 	length uint64
 	ufs    ufslib.UnderFileStorage
 	reader *dataReader
 	sync.Mutex
 	// TODO: 先用base.FileHandle跑通流程，后续修改ufs接口
-	fd            ufslib.FileHandle
+	fd            base.FileHandle
 	buffersCache  cache.ReadBufferMap
 	streamReader  io.ReadCloser
 	seqReadAmount uint64
@@ -80,7 +82,7 @@ type dataReader struct {
 func (fh *fileReader) Read(buf []byte, off uint64) (int, syscall.Errno) {
 	fh.Lock()
 	defer fh.Unlock()
-	log.Debugf("fileReader len[%d] off[%d] path[%s] length[%d]", len(buf), off, fh.path, fh.length)
+	log.Debugf("fileReader len[%d] off[%d] blockName[%s] length[%d]", len(buf), off, fh.name, fh.length)
 	if off >= fh.length || len(buf) == 0 {
 		return 0, syscall.F_OK
 	}
@@ -123,7 +125,8 @@ func (fh *fileReader) Read(buf []byte, off uint64) (int, syscall.Errno) {
 			return 0, syscall.EBADF
 		}
 		// todo:: 不走缓存部分需要保持原来open-read模式，保证这部分性能
-		bytesRead, err = fh.fd.Read(buf, off)
+		ufsHandle := ufslib.NewFileHandle(fh.fd)
+		bytesRead, err = ufsHandle.ReadAt(buf, int64(off))
 		if err != nil {
 			log.Errorf("ufs read err: %v", err)
 			return 0, syscall.EBADF
@@ -190,16 +193,18 @@ func (fh *fileReader) release() {
 }
 
 func (d *dataReader) Open(inode Ino, length uint64, ufs ufslib.UnderFileStorage, path string) (FileReader, error) {
+	name := d.m.InoToPath(inode)
 	f := &fileReader{
 		reader:       d,
 		inode:        inode,
+		name:         name,
 		path:         path,
 		length:       length,
 		ufs:          ufs,
 		buffersCache: make(cache.ReadBufferMap),
 	}
 	if d.store == nil {
-		fd, err := ufs.Open(path, syscall.O_RDONLY, length)
+		fd, err := ufs.Open(path, syscall.O_RDONLY)
 		if err != nil {
 			return nil, err
 		}

@@ -24,6 +24,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/hanwen/go-fuse/v2/fuse/nodefs"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/PaddlePaddle/PaddleFlow/pkg/fs/client/base"
@@ -111,19 +112,19 @@ func (fs *localMount) SetXAttr(name string, attr string, data []byte, flags int)
 	return syscall.ENOSYS
 }
 
-func (fs *localMount) Open(name string, flags uint32, size uint64) (fd FileHandle, err error) {
+func (fs *localMount) Open(name string, flags uint32) (fd base.FileHandle, err error) {
 	flags = flags &^ syscall.O_APPEND
 	f, err := os.OpenFile(fs.GetPath(name), int(flags), 0)
 	if err != nil {
 		return nil, err
 	}
-	return newLocalFileHandle(f), nil
+	return nodefs.NewLoopbackFile(f), nil
 }
 
-func (fs *localMount) Create(name string, flags uint32, mode uint32) (fd FileHandle, err error) {
+func (fs *localMount) Create(name string, flags uint32, mode uint32) (fd base.FileHandle, err error) {
 	flags = flags &^ syscall.O_APPEND
 	f, err := os.OpenFile(fs.GetPath(name), int(flags)|os.O_CREATE, os.FileMode(mode))
-	return newLocalFileHandle(f), err
+	return nodefs.NewLoopbackFile(f), err
 }
 
 // Directory handling

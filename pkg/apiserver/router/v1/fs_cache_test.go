@@ -23,6 +23,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/PaddlePaddle/PaddleFlow/pkg/apiserver/common"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/apiserver/controller/fs"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/model"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/storage"
@@ -40,26 +41,32 @@ func mockFSCache() model.FSCacheConfig {
 	return model.FSCacheConfig{
 		FsID:           mockFsID,
 		CacheDir:       "/abs/path",
-		MetaDriver:     "disk",
+		MetaDriver:     "leveldb",
 		BlockSize:      666,
 		ExtraConfigMap: map[string]string{"abc": "def"},
 	}
 }
 
-func buildCreateReq(model model.FSCacheConfig) fs.CreateFileSystemCacheRequest {
-	req := fs.CreateFileSystemCacheRequest{
-		Username:    MockRootUser,
-		FsName:      mockFsName,
+func buildUpdateReq(model model.FSCacheConfig) fs.UpdateFileSystemCacheRequest {
+	return fs.UpdateFileSystemCacheRequest{
 		FsID:        model.FsID,
 		CacheDir:    model.CacheDir,
-		MetaDriver:  "disk",
+		MetaDriver:  "leveldb",
 		BlockSize:   model.BlockSize,
 		ExtraConfig: map[string]string{"aa": "bb"},
+	}
+}
+
+func buildCreateReq(model model.FSCacheConfig) fs.CreateFileSystemCacheRequest {
+	req := fs.CreateFileSystemCacheRequest{
+		Username:                     MockRootUser,
+		FsName:                       mockFsName,
+		UpdateFileSystemCacheRequest: buildUpdateReq(model),
 	}
 	return req
 }
 
-func TestRouter_FSCacheConfig(t *testing.T) {
+func TestFSCacheConfigRouter(t *testing.T) {
 	router, baseUrl := prepareDBAndAPI(t)
 	mockFs := mockFS()
 	cacheConf := mockFSCache()
@@ -109,40 +116,53 @@ func TestRouter_FSCacheConfig(t *testing.T) {
 	result, err = PerformDeleteRequest(router, urlWithFsID)
 	assert.Nil(t, err)
 	assert.Equal(t, http.StatusNotFound, result.Code)
+}
 
-	// test create failure - wrong driver
-	createRep.MetaDriver = "notValid"
-	result, err = PerformPostRequest(router, url, createRep)
+func buildReportRequest() fs.CacheReportRequest {
+	req := fs.CacheReportRequest{
+		Username:  MockRootUser,
+		FsName:    mockFsName,
+		ClusterID: "testcluster",
+		CacheDir:  "/var/cache",
+		NodeName:  "abc.com",
+		UsedSize:  100,
+	}
+	return req
+}
+
+func TestFSCacheReportRouter(t *testing.T) {
+	router, baseUrl := prepareDBAndAPI(t)
+	// mockFs := buildMockFS()
+	// cacheConf := buildMockFSCacheConfig()
+	req := buildReportRequest()
+	badReq := fs.CacheReportRequest{
+		Username:  MockRootUser,
+		FsName:    mockFsName,
+		ClusterID: "testcluster",
+		CacheDir:  "/var/cache",
+		NodeName:  "abc.com",
+	}
+	// test create failure - no fs
+	url := baseUrl + "/fsCache/report"
+	result, err := PerformPostRequest(router, url, badReq)
 	assert.Nil(t, err)
 	assert.Equal(t, http.StatusBadRequest, result.Code)
 
-	// test create failure - too high memory
-	createRep.Resource.MemoryLimit = "10Gi"
-	result, err = PerformPostRequest(router, url, createRep)
+	result, err = PerformPostRequest(router, url, req)
 	assert.Nil(t, err)
-	assert.Equal(t, http.StatusBadRequest, result.Code)
+	assert.Equal(t, http.StatusOK, result.Code)
 
-	// test create failure - negative memory
-	createRep.Resource.MemoryLimit = "-1Gi"
-	result, err = PerformPostRequest(router, url, createRep)
+	cacheList, err := storage.FsCache.List(common.ID(MockRootUser, mockFsName), "")
 	assert.Nil(t, err)
-	assert.Equal(t, http.StatusBadRequest, result.Code)
+	assert.Equal(t, 1, len(cacheList))
 
-	// test create failure - too many cpu
-	createRep.Resource.CpuLimit = "4"
-	result, err = PerformPostRequest(router, url, createRep)
+	req.UsedSize = 200
+	result, err = PerformPostRequest(router, url, req)
 	assert.Nil(t, err)
-	assert.Equal(t, http.StatusBadRequest, result.Code)
+	assert.Equal(t, http.StatusOK, result.Code)
 
-	// test create failure - 0 cpu
-	createRep.Resource.CpuLimit = "0"
-	result, err = PerformPostRequest(router, url, createRep)
+	cacheList, err = storage.FsCache.List(common.ID(MockRootUser, mockFsName), "")
 	assert.Nil(t, err)
-	assert.Equal(t, http.StatusBadRequest, result.Code)
-
-	// test create failure - invalid
-	createRep.Resource.MemoryLimit = "ddff4"
-	result, err = PerformPostRequest(router, url, createRep)
-	assert.Nil(t, err)
-	assert.Equal(t, http.StatusBadRequest, result.Code)
+	assert.Equal(t, 1, len(cacheList))
+	assert.Equal(t, 200, cacheList[0].UsedSize)
 }

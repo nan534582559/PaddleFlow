@@ -54,25 +54,26 @@ func init() {
 	csiconfig.PodName = os.Getenv("CSI_POD_NAME")
 
 	if csiconfig.PodName == "" || csiconfig.Namespace == "" {
-		log.Errorf("Pod name[%s] & namespace[%s] can't be null\n", csiconfig.PodName, csiconfig.Namespace)
-		return
+		log.Fatalf("Pod name[%s] & namespace[%s] can't be null\n", csiconfig.PodName, csiconfig.Namespace)
+		os.Exit(0)
 	}
 
 	k8sClient, err := utils.GetK8sClient()
 	if err != nil {
 		log.Errorf("get k8s client failed: %v", err)
-		return
+		os.Exit(0)
 	}
 	pod, err := k8sClient.GetPod(csiconfig.Namespace, csiconfig.PodName)
 	if err != nil {
 		log.Errorf("Can't get pod %s: %v", csiconfig.PodName, err)
-		return
+		os.Exit(0)
 	}
 	csiconfig.CSIPod = *pod
 	csiconfig.NodeName = pod.Spec.NodeName
 	for i := range pod.Spec.Containers {
 		if pod.Spec.Containers[i].Name == CsiContainerName {
 			csiconfig.MountImage = pod.Spec.Containers[i].Image
+			// csiconfig.ContainerResource = pod.Spec.Containers[i].Resources
 		}
 	}
 	for _, v := range pod.Spec.Volumes {
@@ -82,7 +83,7 @@ func init() {
 	}
 	if csiconfig.HostMntDir == "" || csiconfig.MountImage == "" {
 		log.Errorf("Can't get HostPath [pfs-mnt] or container [csi-storage-driver] in pod %s", csiconfig.PodName)
-		return
+		os.Exit(0)
 	}
 }
 
@@ -138,7 +139,8 @@ func act(c *cli.Context) error {
 	go ctrl.Start(stopChan)
 	defer ctrl.Stop()
 
-	d := csidriver.NewDriver(c.String("node-id"), c.String("unix-endpoint"))
+	d := csidriver.NewDriver(c.String("node-id"), c.String("unix-endpoint"),
+		c.String("username"), c.String("password"))
 	d.Run()
 	return nil
 }

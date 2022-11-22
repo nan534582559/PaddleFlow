@@ -47,9 +47,6 @@ class FlavouriceApi(object):
             params['marker'] = marker
         if key:
             params['name'] = key
-        if clustername != "":
-            params['clusterName'] = clustername
-
         response = api_client.call_api(method="GET", url=parse.urljoin(host, api.PADDLE_FLOW_FLAVOUR),
                                        params=params, headers=header)
         if not response:

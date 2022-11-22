@@ -29,14 +29,6 @@ func IsError(err syscall.Errno) bool {
 	return true
 }
 
-func IfNotExist(err error) bool {
-	err_ := ToSyscallErrno(err)
-	if err_ == syscall.ENOENT || err_ == syscall.ENOTDIR {
-		return true
-	}
-	return false
-}
-
 // err默认为syscall.Errno, 当不能转换时返回syscall.ENOTSUP
 func ToSyscallErrno(err error) syscall.Errno {
 	if err == nil {
@@ -69,10 +61,6 @@ func ToSyscallErrno(err error) syscall.Errno {
 
 	if strings.Contains(err.Error(), "file already exists") {
 		return syscall.EEXIST
-	}
-
-	if strings.Contains(err.Error(), "bad file descriptor") {
-		return syscall.EBADF
 	}
 
 	if strings.Contains(err.Error(), "Operation unsupported") {

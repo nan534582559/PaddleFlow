@@ -30,6 +30,7 @@ import (
 
 	"github.com/colinmarc/hdfs/v2"
 	"github.com/hanwen/go-fuse/v2/fuse"
+	"github.com/hanwen/go-fuse/v2/fuse/nodefs"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/PaddlePaddle/PaddleFlow/pkg/fs/client/base"
@@ -207,6 +208,19 @@ func (fs *hdfsFileSystem) Utimens(name string, atime, mtime *time.Time) error {
 
 func (fs *hdfsFileSystem) Truncate(name string, size uint64) error {
 	log.Tracef("hdfs truncate: name[%s], size[%d]", name, size)
+	if size == 0 {
+		if err := fs.Unlink(name); err != nil {
+			return err
+		}
+		flags := syscall.O_CREAT | syscall.O_EXCL
+		fh, err := fs.Create(name, uint32(flags), 0644)
+		if err != nil {
+			return err
+		}
+		fh.Release()
+		return nil
+	}
+	// 保证fio顺序读和随机读性能测试能够正常，不返回报错
 	return nil
 
 }
@@ -334,7 +348,7 @@ func (fs *hdfsFileSystem) Put(name string, reader io.Reader) error {
 
 // File handling.  If opening for writing, the file's mtime
 // should be updated too.
-func (fs *hdfsFileSystem) Open(name string, flags uint32, size uint64) (FileHandle, error) {
+func (fs *hdfsFileSystem) Open(name string, flags uint32) (fd base.FileHandle, err error) {
 	log.Tracef("hdfs open: name[%s], flags[%d]", name, flags)
 	flag := fs.getOpenFlags(name, flags)
 
@@ -380,7 +394,7 @@ func (fs *hdfsFileSystem) Open(name string, flags uint32, size uint64) (FileHand
 	return nil, syscall.ENOSYS
 }
 
-func (fs *hdfsFileSystem) Create(name string, flags, mode uint32) (fd FileHandle, err error) {
+func (fs *hdfsFileSystem) Create(name string, flags, mode uint32) (fd base.FileHandle, err error) {
 	fs.Lock()
 	defer fs.Unlock()
 	log.Tracef("hdfs create: name[%s], flags[%d], mode[%d]", name, flags, mode)
@@ -457,16 +471,24 @@ type hdfsFileHandle struct {
 	reader *hdfs.FileReader
 }
 
-var _ FileHandle = &hdfsFileHandle{}
+var _ base.FileHandle = &hdfsFileHandle{}
 
-func (fh *hdfsFileHandle) Read(buf []byte, off uint64) (int, error) {
+func (fh *hdfsFileHandle) String() string {
+	return fmt.Sprintf("hdfsFileHandle(%s)", fh.name)
+}
+
+func (fh *hdfsFileHandle) SetInode(*nodefs.Inode) {
+}
+func (fh *hdfsFileHandle) InnerFile() nodefs.File {
+	return nil
+}
+
+func (fh *hdfsFileHandle) Read(buf []byte, off int64) (res fuse.ReadResult, code fuse.Status) {
 	log.Tracef("hdfs read: fh.name[%s], offset[%d]", fh.name, off)
 	if fh.reader == nil {
-		err := fmt.Errorf("hdfs read: file[%s] bad file descriptor reader==nil", fh.name)
-		log.Errorf(err.Error())
-		return 0, err
+		return nil, fuse.EBADF
 	}
-	n, err := fh.reader.ReadAt(buf, int64(off))
+	n, err := fh.reader.ReadAt(buf, off)
 	if err != nil && err != io.EOF {
 		log.Debugf("hdfsRead: the err is %+v", err)
 		if strings.Contains(err.Error(), "invalid checksum") ||
@@ -477,25 +499,24 @@ func (fh *hdfsFileHandle) Read(buf []byte, off uint64) (int, error) {
 				fh.reader = nil
 			}
 		}
-		return 0, err
+		return nil, fuse.ToStatus(err)
 	}
-	return n, nil
+	return fuse.ReadResultData(buf[0:n]), fuse.OK
 }
 
-func (fh *hdfsFileHandle) Write(data []byte, off uint64) (uint32, error) {
+func (fh *hdfsFileHandle) Write(data []byte, off int64) (uint32, fuse.Status) {
 	log.Tracef("hdfs write: fh.name[%s], dataLength[%d], offset[%d], fh[%+v]", fh.name, len(data), off, fh)
 	if fh.writer == nil {
-		err := fmt.Errorf("hdfs write: file[%s] bad file descriptor writer==nil", fh.name)
-		log.Errorf(err.Error())
-		return 0, err
+		log.Errorf("hdfs write: fh.name[%s], writer nil", fh.name)
+		return 0, fuse.EBADF
 	}
 
 	n, err := fh.writer.Write(data)
 	if err != nil {
 		log.Tracef("hdfs write: fh.name[%s] fh.writer.Write err:%v", fh.name, err)
-		return 0, err
+		return 0, fuse.ToStatus(err)
 	}
-	return uint32(n), nil
+	return uint32(n), fuse.OK
 }
 
 func (fh *hdfsFileHandle) Release() {
@@ -511,23 +532,40 @@ func (fh *hdfsFileHandle) Release() {
 	}
 }
 
-func (fh *hdfsFileHandle) Flush() error {
+func (fh *hdfsFileHandle) Flush() fuse.Status {
 	log.Tracef("hdfs flush: fh.name[%s]", fh.name)
 	if fh.writer == nil {
-		return nil
+		return fuse.OK
 	}
 
-	return fh.writer.Flush()
+	return fuse.ToStatus(fh.writer.Flush())
 }
 
-func (fh *hdfsFileHandle) Fsync(flags int) error {
+func (fh *hdfsFileHandle) Fsync(flags int) (code fuse.Status) {
 	if fh.writer == nil {
-		return nil
+		return fuse.OK
 	}
-	return fh.writer.Flush()
+	return fuse.ToStatus(fh.writer.Flush())
 }
 
-func (fh *hdfsFileHandle) Truncate(size uint64) error {
+// not support
+func (fh *hdfsFileHandle) GetLk(owner uint64, lk *fuse.FileLock, flags uint32, out *fuse.FileLock) (code fuse.Status) {
+	return fuse.ENOSYS
+}
+
+func (fh *hdfsFileHandle) SetLk(owner uint64, lk *fuse.FileLock, flags uint32) (code fuse.Status) {
+	return fuse.ENOSYS
+}
+
+func (fh *hdfsFileHandle) SetLkw(owner uint64, lk *fuse.FileLock, flags uint32) (code fuse.Status) {
+	return fuse.ENOSYS
+}
+
+func (fh *hdfsFileHandle) setLock(owner uint64, lk *fuse.FileLock, flags uint32, blocking bool) (code fuse.Status) {
+	return fuse.ENOSYS
+}
+
+func (fh *hdfsFileHandle) Truncate(size uint64) fuse.Status {
 	log.Tracef("hdfs truncate: fh.name[%s], size[%d]", fh.name, size)
 	var err error
 	if fh.writer != nil && size == 0 {
@@ -535,25 +573,47 @@ func (fh *hdfsFileHandle) Truncate(size uint64) error {
 		err = fh.fs.Truncate(fh.name, size)
 		if err != nil {
 			log.Debugf("hdfs truncate err:%v", err)
-			return err
+			return fuse.ToStatus(err)
 		}
 		fh.writer, err = fh.fs.client.Append(fh.fs.GetPath(fh.name))
 		if err != nil {
 			log.Debugf("hdfs append err:%v", err)
-			return err
+			return fuse.ToStatus(err)
 		}
 	} else {
 		err = fh.fs.Truncate(fh.name, size)
 		if err != nil {
 			log.Debugf("hdfs truncate err:%v", err)
-			return err
+			return fuse.ToStatus(err)
 		}
 	}
-	return nil
+	return fuse.OK
 }
 
-func (fh *hdfsFileHandle) Allocate(off uint64, size uint64, mode uint32) error {
-	return fmt.Errorf("hdfs allocate: not suported")
+func (fh *hdfsFileHandle) Chmod(mode uint32) fuse.Status {
+	return fuse.ToStatus(fh.fs.Chmod(fh.name, mode))
+}
+
+func (fh *hdfsFileHandle) Chown(uid uint32, gid uint32) fuse.Status {
+	return fuse.ToStatus(fh.fs.Chown(fh.name, uid, gid))
+}
+
+func (fh *hdfsFileHandle) GetAttr(a *fuse.Attr) fuse.Status {
+	finfo, err := fh.fs.GetAttr(fh.name)
+	if err != nil {
+		return fuse.ToStatus(err)
+	}
+
+	stat_t := finfo.Sys.(syscall.Stat_t)
+	a.FromStat(&stat_t)
+	return fuse.OK
+}
+func (fh *hdfsFileHandle) Utimens(atime *time.Time, mtime *time.Time) fuse.Status {
+	return fuse.ToStatus(fh.fs.Utimens(fh.name, atime, mtime))
+}
+
+func (fh *hdfsFileHandle) Allocate(off uint64, size uint64, mode uint32) (code fuse.Status) {
+	return fuse.ENOSYS
 }
 
 func NewHdfsFileSystem(properties map[string]interface{}) (UnderFileStorage, error) {

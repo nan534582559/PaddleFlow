@@ -24,15 +24,16 @@ import (
 
 	"github.com/agiledragon/gomonkey/v2"
 	"github.com/stretchr/testify/assert"
+	kschema "k8s.io/apimachinery/pkg/runtime/schema"
 
+	"github.com/PaddlePaddle/PaddleFlow/pkg/apiserver/models"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/config"
+	"github.com/PaddlePaddle/PaddleFlow/pkg/common/k8s"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/logger"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/resources"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/schema"
-	"github.com/PaddlePaddle/PaddleFlow/pkg/job/api"
-	runtime "github.com/PaddlePaddle/PaddleFlow/pkg/job/runtime_v2"
-	"github.com/PaddlePaddle/PaddleFlow/pkg/model"
-	"github.com/PaddlePaddle/PaddleFlow/pkg/storage"
+	"github.com/PaddlePaddle/PaddleFlow/pkg/job/runtime"
+	"github.com/PaddlePaddle/PaddleFlow/pkg/job/runtime/kubernetes/executor"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/storage/driver"
 )
 
@@ -43,14 +44,14 @@ const (
 	MockQueueName   = "mock-q-001"
 )
 
-var clusterInfo = model.ClusterInfo{
+var clusterInfo = models.ClusterInfo{
 	Name:          MockClusterName,
 	Description:   "Description",
 	Endpoint:      "Endpoint",
 	Source:        "Source",
 	ClusterType:   schema.KubernetesType,
 	Version:       "1.16",
-	Status:        model.ClusterStatusOnLine,
+	Status:        models.ClusterStatusOnLine,
 	Credential:    "credential",
 	Setting:       "Setting",
 	NamespaceList: []string{"n1", "n2", MockNamespace},
@@ -64,7 +65,7 @@ func TestCreateQueue(t *testing.T) {
 	driver.InitMockDB()
 	ctx := &logger.RequestContext{UserName: MockRootUser}
 
-	assert.Nil(t, storage.Cluster.CreateCluster(&clusterInfo))
+	assert.Nil(t, models.CreateCluster(&clusterInfo))
 
 	rts := &runtime.KubeRuntime{}
 	var p2 = gomonkey.ApplyPrivateMethod(reflect.TypeOf(rts), "Init", func() error {
@@ -72,7 +73,7 @@ func TestCreateQueue(t *testing.T) {
 	})
 	defer p2.Reset()
 
-	var p3 = gomonkey.ApplyPrivateMethod(reflect.TypeOf(rts), "CreateQueue", func(*api.QueueInfo) error {
+	var p3 = gomonkey.ApplyFunc(executor.Create, func(resource interface{}, gvk kschema.GroupVersionKind, clientOpt *k8s.DynamicClientOption) error {
 		return nil
 	})
 	defer p3.Reset()
@@ -113,7 +114,7 @@ func TestGetQueueByName(t *testing.T) {
 	})
 	defer p2.Reset()
 
-	var p3 = gomonkey.ApplyPrivateMethod(reflect.TypeOf(rts), "GetQueueUsedQuota", func(*api.QueueInfo) (*resources.Resource, error) {
+	var p3 = gomonkey.ApplyPrivateMethod(reflect.TypeOf(rts), "GetQueueUsedQuota", func(*models.Queue) (*resources.Resource, error) {
 		return resources.EmptyResource(), nil
 	})
 	defer p3.Reset()
@@ -150,10 +151,14 @@ func TestCloseAndDeleteQueue(t *testing.T) {
 		return nil
 	})
 	defer p1.Reset()
-	var p2 = gomonkey.ApplyPrivateMethod(reflect.TypeOf(rts), "DeleteQueue", func(*api.QueueInfo) error {
+	var p2 = gomonkey.ApplyPrivateMethod(reflect.TypeOf(rts), "DeleteQueue", func(q *models.Queue) error {
 		return nil
 	})
 	defer p2.Reset()
+	var p3 = gomonkey.ApplyPrivateMethod(reflect.TypeOf(rts), "CloseQueue", func(q *models.Queue) error {
+		return nil
+	})
+	defer p3.Reset()
 
 	err := DeleteQueue(ctx, MockQueueName)
 	assert.Nil(t, err)
@@ -162,10 +167,10 @@ func TestCloseAndDeleteQueue(t *testing.T) {
 // TestMarshalJSONForTime test for time format
 func TestMarshalJSONForTime(t *testing.T) {
 	driver.InitMockDB()
-	queue := model.Queue{
+	queue := models.Queue{
 		Name: "mockQueueName",
 	}
-	err := storage.Queue.CreateQueue(&queue)
+	err := models.CreateQueue(&queue)
 	if err != nil {
 		t.Errorf(err.Error())
 	}

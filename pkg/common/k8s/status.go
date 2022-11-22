@@ -20,7 +20,6 @@ import (
 	"fmt"
 
 	wfv1 "github.com/argoproj/argo/pkg/apis/workflow/v1alpha1"
-	kubeflowv1 "github.com/kubeflow/common/pkg/apis/common/v1"
 	paddlejobv1 "github.com/paddleflow/paddle-operator/api/v1"
 	log "github.com/sirupsen/logrus"
 	"k8s.io/api/core/v1"
@@ -29,7 +28,6 @@ import (
 	k8sschema "k8s.io/apimachinery/pkg/runtime/schema"
 	batchv1alpha1 "volcano.sh/apis/pkg/apis/batch/v1alpha1"
 
-	rayV1alpha1 "github.com/PaddlePaddle/PaddleFlow/pkg/apis/ray-operator/v1alpha1"
 	sparkoperatorv1beta2 "github.com/PaddlePaddle/PaddleFlow/pkg/apis/spark-operator/sparkoperator.k8s.io/v1beta2"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/schema"
 )
@@ -43,14 +41,10 @@ func ConvertToStatus(obj interface{}, gvk k8sschema.GroupVersionKind) (interface
 		realStatus = &batchv1alpha1.JobStatus{}
 	case PaddleJobGVK:
 		realStatus = &paddlejobv1.PaddleJobStatus{}
-	case PyTorchJobGVK, TFJobGVK, MPIJobGVK, MXNetJobGVK, XGBoostJobGVK:
-		realStatus = &kubeflowv1.JobStatus{}
 	case ArgoWorkflowGVK:
 		realStatus = &wfv1.WorkflowStatus{}
 	case PodGVK:
 		realStatus = &v1.PodStatus{}
-	case RayJobGVK:
-		realStatus = &rayV1alpha1.RayJobStatus{}
 	default:
 		return nil, fmt.Errorf("the group version kind %s is not supported", gvk.String())
 	}
@@ -237,71 +231,6 @@ func getPaddleJobStatus(phase paddlejobv1.PaddleJobPhase) (schema.JobStatus, str
 	return status, msg, nil
 }
 
-// PytorchJobStatus get job status, message for PyTorchJob
-func PytorchJobStatus(obj interface{}) (StatusInfo, error) {
-	return kubeflowJobStatus(obj, PyTorchJobGVK)
-}
-
-// TFJobStatus get job status, message for TFJob
-func TFJobStatus(obj interface{}) (StatusInfo, error) {
-	return kubeflowJobStatus(obj, TFJobGVK)
-}
-
-// MXNetJobStatus get job status, message for MXNetJob
-func MXNetJobStatus(obj interface{}) (StatusInfo, error) {
-	return kubeflowJobStatus(obj, MXNetJobGVK)
-}
-
-// MPIJobStatus get job status, message for MPIJob
-func MPIJobStatus(obj interface{}) (StatusInfo, error) {
-	return kubeflowJobStatus(obj, MPIJobGVK)
-}
-
-// kubeflowJobStatus get job status and message for PyTorch, TFJob, MXJob, MPIJob, and covert origin status to PF JobStatus
-func kubeflowJobStatus(obj interface{}, gvk k8sschema.GroupVersionKind) (StatusInfo, error) {
-	status, err := ConvertToStatus(obj, gvk)
-	if err != nil {
-		log.Errorf("convert kubeflow %s job status failed, err: %v", gvk.String(), err)
-		return StatusInfo{}, err
-	}
-	jobStatus := status.(*kubeflowv1.JobStatus)
-	condLen := len(jobStatus.Conditions)
-	var jobCond kubeflowv1.JobCondition
-	if condLen >= 1 {
-		jobCond = jobStatus.Conditions[condLen-1]
-	}
-
-	state, msg, err := getKubeflowJobStatus(jobCond)
-	if err != nil {
-		log.Errorf("get kubeflow %s job status failed, err: %v", gvk.String(), err)
-		return StatusInfo{}, err
-	}
-	log.Infof("kubeflow %s job status: %s", gvk.String(), state)
-	return StatusInfo{
-		OriginStatus: string(jobCond.Type),
-		Status:       state,
-		Message:      msg,
-	}, nil
-}
-
-func getKubeflowJobStatus(jobStatus kubeflowv1.JobCondition) (schema.JobStatus, string, error) {
-	status := schema.JobStatus("")
-	msg := jobStatus.Message
-	switch jobStatus.Type {
-	case kubeflowv1.JobCreated:
-		status = schema.StatusJobPending
-	case kubeflowv1.JobRunning, kubeflowv1.JobRestarting:
-		status = schema.StatusJobRunning
-	case kubeflowv1.JobSucceeded:
-		status = schema.StatusJobSucceeded
-	case kubeflowv1.JobFailed:
-		status = schema.StatusJobFailed
-	default:
-		return status, msg, fmt.Errorf("unexpected job status: %s", jobStatus.Type)
-	}
-	return status, msg, nil
-}
-
 // SingleJobStatus get single job status, message from interface{}, and covert to JobStatus
 func SingleJobStatus(obj interface{}) (StatusInfo, error) {
 	status, err := ConvertToStatus(obj, PodGVK)
@@ -407,52 +336,4 @@ func getArgoWorkflowStatus(phase wfv1.NodePhase) (schema.JobStatus, error) {
 		return status, fmt.Errorf("unexpected ArgoWorkflow status: %s", phase)
 	}
 	return status, nil
-}
-
-// RayJobStatus get job status, message for RayJob
-func RayJobStatus(obj interface{}) (StatusInfo, error) {
-	status, err := ConvertToStatus(obj, RayJobGVK)
-	if err != nil {
-		log.Errorf("convert ray job %s status failed, err: %v", RayJobGVK.String(), err)
-		return StatusInfo{}, err
-	}
-	jobStatus := status.(*rayV1alpha1.RayJobStatus)
-
-	state, msg, err := getRayJobStatus(jobStatus)
-	if err != nil {
-		log.Errorf("get ray job %s status failed, err: %v", RayJobGVK.String(), err)
-		return StatusInfo{}, err
-	}
-	log.Infof("ray job %s status: %s", RayJobGVK.String(), state)
-	return StatusInfo{
-		OriginStatus: string(state),
-		Status:       state,
-		Message:      msg,
-	}, nil
-}
-
-func getRayJobStatus(rayJobStatus *rayV1alpha1.RayJobStatus) (schema.JobStatus, string, error) {
-	status := schema.JobStatus("")
-	msg := ""
-	jobStatus := rayJobStatus.JobStatus
-	switch jobStatus {
-	// TODO JobStatusStopped should be processed in another way when the feature "unused status Stopped" is fixed by ray-operator
-	case rayV1alpha1.JobStatusPending, rayV1alpha1.JobStatusStopped:
-		status, msg = schema.StatusJobPending, "job is pending"
-	case rayV1alpha1.JobStatusRunning:
-		status, msg = schema.StatusJobRunning, "job is running"
-	case rayV1alpha1.JobStatusSucceeded:
-		status, msg = schema.StatusJobSucceeded, "job is succeeded"
-	case rayV1alpha1.JobStatusFailed:
-		status = schema.StatusJobFailed
-		msg = getRayJobMessage(rayJobStatus)
-	default:
-		return status, msg, fmt.Errorf("unexpected ray job status: %s", jobStatus)
-	}
-	return status, msg, nil
-}
-
-func getRayJobMessage(rayJobStatus *rayV1alpha1.RayJobStatus) string {
-	return fmt.Sprintf("RayJob status in [jobDeploymentStatus/rayClusterStatus/jobStatus] is %s/%s/%s, message: %s",
-		rayJobStatus.JobDeploymentStatus, rayJobStatus.RayClusterStatus.State, rayJobStatus.JobStatus, rayJobStatus.Message)
 }

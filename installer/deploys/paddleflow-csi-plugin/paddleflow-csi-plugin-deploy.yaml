@@ -163,11 +163,6 @@ spec:
             - --csi-address=/csi/csi.sock
             - --kubelet-registration-path=/var/lib/kubelet/plugins/pfs-csi/csi.sock
           env:
-            - name: KUBE_NODE_NAME
-              valueFrom:
-                fieldRef:
-                  apiVersion: v1
-                  fieldPath: spec.nodeName
             - name: MOUNT_POINT_INTERVAL_TIME
               value: "10"
           image: paddleflow/csi-driver-registrar:1.2.0
@@ -198,7 +193,8 @@ spec:
             - /bin/sh
             - -c
             - cd /home/paddleflow && /home/paddleflow/csi-plugin --unix-endpoint=$(CSI_ENDPOINT)
-              --node-id=$(KUBE_NODE_NAME) --log-dir=./log/csidriver --log-level=debug
+              --node-id=$(KUBE_NODE_NAME) --log-dir=./log/csidriver --username=root --password=paddleflow
+              --log-level=debug
           env:
             - name: CSI_ENDPOINT
               value: unix:///csi/csi.sock
@@ -218,16 +214,15 @@ spec:
                 fieldRef:
                   apiVersion: v1
                   fieldPath: metadata.namespace
-          image: paddleflow/pfs-csi-plugin:1.4.5
+            - name: KUBE_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  apiVersion: v1
+                  fieldPath: spec.nodeName
+          image: paddleflow/pfs-csi-plugin:1.4.3
           imagePullPolicy: IfNotPresent
           name: csi-storage-driver
-          resources:
-            limits:
-              cpu: 1500m
-              memory: 3G
-            requests:
-              cpu: 500m
-              memory: 1G
+          resources: {}
           securityContext:
             capabilities:
               add:
@@ -345,13 +340,7 @@ spec:
             - containerPort: 12345
               name: port-0
               protocol: TCP
-          resources:
-            requests:
-              memory: "1G"
-              cpu: "500m"
-            limits:
-              memory: "2G"
-              cpu: "2000m"
+          resources: {}
           securityContext:
             privileged: true
           terminationMessagePath: /dev/termination-log

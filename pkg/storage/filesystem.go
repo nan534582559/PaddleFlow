@@ -143,7 +143,7 @@ func (fss *FilesystemStore) CreateFSCacheConfig(fsCacheConfig *model.FSCacheConf
 }
 
 func (fss *FilesystemStore) UpdateFSCacheConfig(fsCacheConfig *model.FSCacheConfig) error {
-	nodeAffinityMap, err := json.Marshal(&fsCacheConfig.NodeAffinity)
+	nodeAffinityMap, err := json.Marshal(&fsCacheConfig.NodeAffinityMap)
 	if err != nil {
 		return err
 	}
@@ -181,10 +181,4 @@ func (fss *FilesystemStore) GetFSCacheConfig(fsID string) (model.FSCacheConfig, 
 		return model.FSCacheConfig{}, tx.Error
 	}
 	return fsCacheConfig, nil
-}
-
-func (fss *FilesystemStore) ListFSCacheConfig(fsIDs []string) ([]model.FSCacheConfig, error) {
-	var fsCacheConfigs []model.FSCacheConfig
-	tx := fss.db.Model(&model.FSCacheConfig{}).Where("fs_id in ?", fsIDs).Find(&fsCacheConfigs)
-	return fsCacheConfigs, tx.Error
 }

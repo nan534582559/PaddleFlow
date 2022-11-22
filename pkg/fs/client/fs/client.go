@@ -24,8 +24,8 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	cache "github.com/PaddlePaddle/PaddleFlow/pkg/fs/client/cache"
-	meta "github.com/PaddlePaddle/PaddleFlow/pkg/fs/client/meta"
+	"github.com/PaddlePaddle/PaddleFlow/pkg/fs/client/cache"
+	"github.com/PaddlePaddle/PaddleFlow/pkg/fs/client/meta"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/fs/common"
 )
 
@@ -49,10 +49,9 @@ var (
 	DataCacheExpire = 0 * time.Second
 	DataCachePath   = "/var/cache/pfs_data_cache"
 
-	Driver           = meta.MemDriver
+	Driver           = meta.DefaultName
 	MetaCacheExpire  = 0 * time.Second
 	EntryCacheExpire = 0 * time.Second
-	PathCacheExpire  = 0 * time.Second
 	MetaCachePath    = "/var/cache/pfs_meta_cache"
 )
 
@@ -61,7 +60,6 @@ func SetMetaCache(config meta.Config) {
 	MetaCacheExpire = config.AttrCacheExpire
 	EntryCacheExpire = config.EntryCacheExpire
 	MetaCachePath = config.CachePath
-	PathCacheExpire = config.PathCacheExpire
 }
 
 func SetDataCache(config cache.Config) {
@@ -89,7 +87,6 @@ type FSClient interface {
 	Copy(srcPath, dstPath string) error
 	Size(path string) (int64, error)
 	Chmod(path string, fm os.FileMode) error
-	Chown(name string, uid, gid int) error
 	Walk(root string, walkFn filepath.WalkFunc) error
 	Stat(path string) (os.FileInfo, error)
 }

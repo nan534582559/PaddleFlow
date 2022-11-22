@@ -26,7 +26,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/panjf2000/ants/v2"
 	log "github.com/sirupsen/logrus"
 
 	"github.com/PaddlePaddle/PaddleFlow/pkg/fs/utils"
@@ -38,7 +37,6 @@ const (
 )
 
 var _ DataCacheClient = &fileDataCache{}
-var deleteCachePool, _ = ants.NewPool(5)
 
 type cacheItem struct {
 	size    int64
@@ -72,7 +70,7 @@ func newFileClient(config Config) DataCacheClient {
 	go func() {
 		for {
 			d.clean()
-			time.Sleep(5 * time.Second)
+			time.Sleep(10 * time.Second)
 		}
 	}()
 
@@ -113,9 +111,14 @@ func (c *fileDataCache) save(key string, buf []byte) {
 	}
 	cacheSize := int64(len(buf))
 	if c.used+cacheSize >= c.capacity {
-		return
+		// todo：clean支持带参数，释放多少容量。
+		c.clean()
 	}
 
+	// 清理之后还是没有足够的容量，则跳过
+	if c.used+cacheSize >= c.capacity {
+		return
+	}
 	path := c.cachePath(key)
 	c.createDir(filepath.Dir(path))
 	tmp := path + ".tmp"
@@ -157,34 +160,26 @@ func (c *fileDataCache) delete(key string) {
 	if ok {
 		c.keys.Delete(key)
 	}
-	_ = deleteCachePool.Submit(func() {
-		err := os.Remove(path)
-		if err != nil {
-			log.Debugf("delete cache remove err: %v", err)
-		}
-	})
+	if path != "" {
+		go os.Remove(path)
+	}
 }
 
 func (c *fileDataCache) clean() {
 	// 1. 首先清理掉已过期文件
 	c.keys.Range(func(key, value interface{}) bool {
 		cache := value.(*cacheItem)
-		if time.Since(cache.expTime) >= 0 {
+		if time.Now().Sub(cache.expTime) >= 0 {
 			c.delete(key.(string))
 		}
 		return true
 	})
 
-	cacheDir := filepath.Join(c.dir, CacheDir)
 	if c.dir == "/" || c.dir == "" {
 		return
 	}
 	// 2. 清理目录下存在，但是c.keys中不存在的的文件,
-	if errCheck := filepath.Walk(cacheDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			log.Debugf("prevent panic by handling failure accessing a path %q: %v", path, err)
-			return err
-		}
+	filepath.Walk(filepath.Join(c.dir, CacheDir), func(path string, info os.FileInfo, err error) error {
 		if info == nil {
 			return nil
 		}
@@ -200,13 +195,10 @@ func (c *fileDataCache) clean() {
 		if strings.HasSuffix(path, "tmp") {
 			return nil
 		}
-		return os.Remove(path)
-	}); errCheck != nil {
-		log.Debugf("data cache clean: filepath.Walk failed: %v", errCheck)
-	}
-	if errCheck := c.updateCapacity(); errCheck != nil {
-		log.Debugf("data cache clean: updateCapacity failed: %v", errCheck)
-	}
+		err = os.Remove(path)
+		return err
+	})
+	c.updateCapacity()
 }
 
 func (c *fileDataCache) cachePath(key string) string {
@@ -227,7 +219,7 @@ func (c *fileDataCache) exist(key string) bool {
 		return false
 	} else {
 		cache := value.(*cacheItem)
-		if time.Until(cache.expTime) <= 0 {
+		if cache.expTime.Sub(time.Now()) <= 0 {
 			return false
 		}
 	}
@@ -265,7 +257,7 @@ func (c *fileDataCache) updateCapacity() error {
 				return err
 			}
 			c.Lock()
-			c.capacity = int64(float64(total*1024) * 0.9)
+			c.capacity = total * 1024
 			c.used = used * 1024
 			c.Unlock()
 			return nil

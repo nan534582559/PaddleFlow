@@ -17,7 +17,6 @@ limitations under the License.
 package v1
 
 import (
-	"math/rand"
 	"net/http"
 	"os"
 	"reflect"
@@ -25,12 +24,10 @@ import (
 
 	"github.com/agiledragon/gomonkey/v2"
 	"github.com/stretchr/testify/assert"
-	k8sCore "k8s.io/api/core/v1"
 
 	"github.com/PaddlePaddle/PaddleFlow/pkg/apiserver/controller/fs"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/logger"
 	fsCommon "github.com/PaddlePaddle/PaddleFlow/pkg/fs/common"
-	runtime "github.com/PaddlePaddle/PaddleFlow/pkg/job/runtime_v2"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/model"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/storage"
 )
@@ -276,18 +273,6 @@ func Test_validateCreateFileSystem(t *testing.T) {
 			},
 			wantErr: true,
 		},
-		{
-			name: "username and filename is wrong",
-			args: args{
-				ctx: ctx,
-				req: &fs.CreateFileSystemRequest{
-					Name:     RandomString(9),
-					Username: RandomString(51),
-					Url:      "test://1123",
-				},
-			},
-			wantErr: true,
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -477,15 +462,10 @@ func TestCreateFSAndDeleteFs(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, http.StatusCreated, result.Code)
 	// test delete fs successful
-	var p1 = gomonkey.ApplyPrivateMethod(reflect.TypeOf(fs.GetFileSystemService()), "checkFsMountedAllClustersAndScheduledJobs",
+	var p1 = gomonkey.ApplyMethod(reflect.TypeOf(fs.GetFileSystemService()), "CheckFsMountedAndCleanResources",
 		func(_ *fs.FileSystemService, fsID string) (bool, error) {
 			return false, nil
 		})
-	var p2 = gomonkey.ApplyPrivateMethod(reflect.TypeOf(fs.GetFileSystemService()), "cleanFsResources",
-		func(_ *fs.FileSystemService, runtimePodsMap map[*runtime.KubeRuntime][]k8sCore.Pod, fsID string) (err error) {
-			return nil
-		})
-	defer p2.Reset()
 	deleteUrl := fsUrl + "/" + mockFsName
 	result, err = PerformDeleteRequest(router, deleteUrl)
 	assert.Nil(t, err)
@@ -494,7 +474,7 @@ func TestCreateFSAndDeleteFs(t *testing.T) {
 	p1.Reset()
 
 	// test fs mounted
-	p1 = gomonkey.ApplyPrivateMethod(reflect.TypeOf(fs.GetFileSystemService()), "checkFsMountedAllClustersAndScheduledJobs",
+	p1 = gomonkey.ApplyMethod(reflect.TypeOf(fs.GetFileSystemService()), "CheckFsMountedAndCleanResources",
 		func(_ *fs.FileSystemService, fsID string) (bool, error) {
 			return true, nil
 		})
@@ -507,14 +487,4 @@ func TestCreateFSAndDeleteFs(t *testing.T) {
 	result, err = PerformDeleteRequest(router, deleteUrl)
 	assert.Nil(t, err)
 	assert.Equal(t, http.StatusForbidden, result.Code)
-}
-
-func RandomString(n int) string {
-	var letterRunes = []rune("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
-
-	b := make([]rune, n)
-	for i := range b {
-		b[i] = letterRunes[rand.Intn(len(letterRunes))]
-	}
-	return string(b)
 }

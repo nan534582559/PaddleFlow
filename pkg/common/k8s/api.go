@@ -42,14 +42,6 @@ var (
 	EQuotaGVK    = schema.GroupVersionKind{Group: "scheduling.volcano.sh", Version: "v1beta1", Kind: "ElasticResourceQuota"}
 	SparkAppGVK  = schema.GroupVersionKind{Group: "sparkoperator.k8s.io", Version: "v1beta2", Kind: "SparkApplication"}
 	PaddleJobGVK = schema.GroupVersionKind{Group: "batch.paddlepaddle.org", Version: "v1", Kind: "PaddleJob"}
-	// PyTorchJobGVK TFJobGVK defines GVK for kubeflow jobs
-	PyTorchJobGVK = schema.GroupVersionKind{Group: "kubeflow.org", Version: "v1", Kind: "PyTorchJob"}
-	TFJobGVK      = schema.GroupVersionKind{Group: "kubeflow.org", Version: "v1", Kind: "TFJob"}
-	MPIJobGVK     = schema.GroupVersionKind{Group: "kubeflow.org", Version: "v1", Kind: "MPIJob"}
-	MXNetJobGVK   = schema.GroupVersionKind{Group: "kubeflow.org", Version: "v1", Kind: "MXJob"}
-	XGBoostJobGVK = schema.GroupVersionKind{Group: "kubeflow.org", Version: "v1", Kind: "XGBoostJob"}
-	RayJobGVK     = schema.GroupVersionKind{Group: "ray.io", Version: "v1alpha1", Kind: "RayJob"}
-
 	// ArgoWorkflowGVK defines GVK for argo Workflow
 	ArgoWorkflowGVK = schema.GroupVersionKind{Group: "argoproj.io", Version: "v1alpha1", Kind: "Workflow"}
 
@@ -60,11 +52,6 @@ var (
 		PaddleJobGVK:    PaddleJobStatus,
 		PodGVK:          SingleJobStatus,
 		ArgoWorkflowGVK: ArgoWorkflowStatus,
-		PyTorchJobGVK:   PytorchJobStatus,
-		TFJobGVK:        TFJobStatus,
-		MXNetJobGVK:     MXNetJobStatus,
-		MPIJobGVK:       MPIJobStatus,
-		RayJobGVK:       RayJobStatus,
 	}
 	// GVKToQuotaType GroupVersionKind lists for PaddleFlow QuotaType
 	GVKToQuotaType = []schema.GroupVersionKind{
@@ -72,32 +59,6 @@ var (
 		EQuotaGVK,
 	}
 )
-
-func GetJobFrameworkVersion(jobType commomschema.JobType, framework commomschema.Framework) commomschema.FrameworkVersion {
-	if jobType == commomschema.TypeWorkflow {
-		return commomschema.NewFrameworkVersion(ArgoWorkflowGVK.Kind, ArgoWorkflowGVK.GroupVersion().String())
-	}
-	var gvk schema.GroupVersionKind
-	switch framework {
-	case commomschema.FrameworkStandalone:
-		gvk = PodGVK
-	case commomschema.FrameworkTF:
-		gvk = TFJobGVK
-	case commomschema.FrameworkPytorch:
-		gvk = PyTorchJobGVK
-	case commomschema.FrameworkSpark:
-		gvk = SparkAppGVK
-	case commomschema.FrameworkPaddle:
-		gvk = PaddleJobGVK
-	case commomschema.FrameworkMXNet:
-		gvk = MXNetJobGVK
-	case commomschema.FrameworkMPI:
-		gvk = MPIJobGVK
-	case commomschema.FrameworkRay:
-		gvk = RayJobGVK
-	}
-	return commomschema.NewFrameworkVersion(gvk.Kind, gvk.GroupVersion().String())
-}
 
 func GetJobTypeAndFramework(gvk schema.GroupVersionKind) (commomschema.JobType, commomschema.Framework) {
 	switch gvk {
@@ -107,16 +68,6 @@ func GetJobTypeAndFramework(gvk schema.GroupVersionKind) (commomschema.JobType, 
 		return commomschema.TypeDistributed, commomschema.FrameworkSpark
 	case PaddleJobGVK:
 		return commomschema.TypeDistributed, commomschema.FrameworkPaddle
-	case PyTorchJobGVK:
-		return commomschema.TypeDistributed, commomschema.FrameworkPytorch
-	case TFJobGVK:
-		return commomschema.TypeDistributed, commomschema.FrameworkTF
-	case MXNetJobGVK:
-		return commomschema.TypeDistributed, commomschema.FrameworkMXNet
-	case MPIJobGVK:
-		return commomschema.TypeDistributed, commomschema.FrameworkMPI
-	case RayJobGVK:
-		return commomschema.TypeDistributed, commomschema.FrameworkRay
 	default:
 		log.Errorf("GroupVersionKind %s is not support", gvk)
 		return "", ""
@@ -299,15 +250,7 @@ func getDistributedJobGVK(framework commomschema.Framework) (schema.GroupVersion
 		gvk = PaddleJobGVK
 	case commomschema.FrameworkSpark:
 		gvk = SparkAppGVK
-	case commomschema.FrameworkPytorch:
-		gvk = PyTorchJobGVK
-	case commomschema.FrameworkTF:
-		gvk = TFJobGVK
-	case commomschema.FrameworkMXNet:
-		gvk = MXNetJobGVK
-	case commomschema.FrameworkRay:
-		gvk = RayJobGVK
-	case commomschema.FrameworkMPI:
+	case commomschema.FrameworkMPI, commomschema.FrameworkTF, commomschema.FrameworkPytorch:
 		err = fmt.Errorf("framework %s is not implemented", framework)
 	default:
 		err = fmt.Errorf("framework %s is not supported", framework)

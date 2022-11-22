@@ -22,24 +22,21 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/PaddlePaddle/PaddleFlow/pkg/common/logger"
+	"github.com/PaddlePaddle/PaddleFlow/pkg/apiserver/models"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/schema"
-	"github.com/PaddlePaddle/PaddleFlow/pkg/model"
-	"github.com/PaddlePaddle/PaddleFlow/pkg/storage"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/storage/driver"
 )
 
 const (
 	MockRootUser    = "root"
-	MockNonRootUser = "abc"
 	MockClusterName = "testCn"
 	MockClusterID   = "testClusterID"
 	MockNamespace   = "paddle"
 	MockFlavourName = "flavour1"
 )
 
-var clusterInfo = model.ClusterInfo{
-	Model:         model.Model{ID: MockClusterID},
+var clusterInfo = models.ClusterInfo{
+	Model:         models.Model{ID: MockClusterID},
 	Name:          MockClusterName,
 	Description:   "Description",
 	Endpoint:      "Endpoint",
@@ -53,7 +50,7 @@ var clusterInfo = model.ClusterInfo{
 }
 
 func initCluster(t *testing.T) {
-	err := storage.Cluster.CreateCluster(&clusterInfo)
+	err := models.CreateCluster(&clusterInfo)
 	assert.Nil(t, err)
 }
 
@@ -65,19 +62,19 @@ func TestListFlavour(t *testing.T) {
 	num := 20
 	clusterNum := 5
 	for i := 0; i < num; i++ {
-		flavour := model.Flavour{
+		flavour := models.Flavour{
 			Name: fmt.Sprintf("flavour%d", i),
 			CPU:  "20",
 			Mem:  "20G",
 			ScalarResources: map[schema.ResourceName]string{
-				"nvidia.com/gpu": "1",
+				"com/gpu": "1",
 			},
 		}
 		if i < clusterNum {
 			flavour.ClusterID = MockClusterID
 		}
 
-		err := storage.Flavour.CreateFlavour(&flavour)
+		err := models.CreateFlavour(&flavour)
 		assert.Nil(t, err)
 	}
 
@@ -110,7 +107,6 @@ func TestCreateFlavour(t *testing.T) {
 			"com/gpu": "1",
 		},
 		ClusterID: MockClusterID,
-		UserName:  MockRootUser,
 	}
 	resp, err := CreateFlavour(&createFlavourReq)
 
@@ -121,121 +117,30 @@ func TestCreateFlavour(t *testing.T) {
 
 func TestUpdateFlavour(t *testing.T) {
 	TestCreateFlavour(t)
-
-	type args struct {
-		ctx *logger.RequestContext
-		req UpdateFlavourRequest
-	}
-	tests := []struct {
-		name    string
-		args    args
-		wantErr bool
-	}{
-		{
-			name: "root update request",
-			args: args{
-				ctx: &logger.RequestContext{
-					UserName: MockRootUser,
-				},
-				req: UpdateFlavourRequest{
-					Name: MockFlavourName,
-					CPU:  "40",
-					Mem:  "20G",
-					ScalarResources: map[schema.ResourceName]string{
-						"nvidia.com/gpu": "1",
-					},
-					ClusterID: MockClusterID,
-					UserName:  MockRootUser,
-				},
-			},
-			wantErr: false,
-		},
-		{
-			name: "non-root update request",
-			args: args{
-				ctx: &logger.RequestContext{
-					UserName: MockNonRootUser,
-				},
-				req: UpdateFlavourRequest{
-					Name: MockFlavourName,
-					CPU:  "40",
-					Mem:  "20G",
-					ScalarResources: map[schema.ResourceName]string{
-						"nvidia.com/gpu": "1",
-					},
-					ClusterID: MockClusterID,
-				},
-			},
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Logf("name=%s args=[%#v], wantError=%v", tt.name, tt.args, tt.wantErr)
-			response, err := UpdateFlavour(tt.args.ctx, &tt.args.req)
-			t.Logf("case[%s] updateFlavour, response=%+v", tt.name, err)
-			if tt.wantErr {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-				t.Logf("response: %v", response)
-			}
-		})
-	}
+	// get
+	flavour, err := models.GetFlavour(MockFlavourName)
+	assert.Nil(t, err)
+	assert.NotEmpty(t, flavour.ClusterName)
+	// update
+	newCPU := "40"
+	flavour.CPU = newCPU
+	err = models.UpdateFlavour(&flavour)
+	assert.Nil(t, err)
+	// query again
+	newFlavour, err := models.GetFlavour(MockFlavourName)
+	assert.Nil(t, err)
+	assert.Equal(t, newFlavour.CPU, newCPU)
 }
 
 func TestGetFlavour(t *testing.T) {
 	TestCreateFlavour(t)
-	flavour, err := storage.Flavour.GetFlavour(MockFlavourName)
+	flavour, err := models.GetFlavour(MockFlavourName)
 	assert.Nil(t, err)
-	assert.Equal(t, flavour.ClusterID, MockClusterID)
+	assert.NotEmpty(t, flavour.ClusterName)
 }
 
 func TestDeleteFlavour(t *testing.T) {
 	TestCreateFlavour(t)
-	//MockFlavourName
-	type args struct {
-		ctx *logger.RequestContext
-		req string
-	}
-	tests := []struct {
-		name    string
-		args    args
-		wantErr bool
-	}{
-		{
-			name: "root delete request",
-			args: args{
-				ctx: &logger.RequestContext{
-					UserName: MockRootUser,
-				},
-				req: MockFlavourName,
-			},
-			wantErr: false,
-		},
-		{
-			name: "non-root delete request",
-			args: args{
-				ctx: &logger.RequestContext{
-					UserName: MockNonRootUser,
-				},
-				req: MockFlavourName,
-			},
-			wantErr: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Logf("name=%s args=[%#v], wantError=%v", tt.name, tt.args, tt.wantErr)
-			err := DeleteFlavour(tt.args.ctx, tt.args.req)
-			t.Logf("case[%s] delete flavour, response=%+v", tt.name, err)
-			if tt.wantErr {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-			}
-		})
-	}
+	err := models.DeleteFlavour(MockFlavourName)
+	assert.Nil(t, err)
 }

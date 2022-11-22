@@ -25,14 +25,9 @@ type LogInfo struct {
 type JobLogInfo struct {
 	JobID    string        `json:"jobID"`
 	TaskList []TaskLogInfo `json:"taskList"`
-
-	ResourceName string   `json:"name"`
-	Resourcetype string   `json:"type"`
-	Events       []string `json:"eventList"`
 }
 
 type TaskLogInfo struct {
-	// container name
 	TaskID string  `json:"taskID"`
 	Info   LogInfo `json:"logInfo"`
 }
@@ -44,16 +39,4 @@ type JobLogRequest struct {
 	LogFilePosition string `json:"logFilePosition"`
 	LogPageSize     int    `json:"logPageSize"`
 	LogPageNo       int    `json:"logPageNo"`
-}
-
-// MixedLogRequest can request job log or k8s pod/deploy events and log
-type MixedLogRequest struct {
-	Name         string
-	Namespace    string
-	ResourceType string
-	Framework    string
-
-	LineLimit      string
-	SizeLimit      int64
-	IsReadFromTail bool
 }

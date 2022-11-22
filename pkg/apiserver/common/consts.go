@@ -35,7 +35,6 @@ const (
 	ResourceTypeArtifactEvent = "artifact_event"
 	ResourceTypeUser          = "user"
 	ResourceTypeQueue         = "queue"
-	ResourceTypeFlavour       = "flavour"
 	ResourceTypeFs            = "fs"
 	ResourceTypeImage         = "image"
 	ResourceTypePipeline      = "pipeline"

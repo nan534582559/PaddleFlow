@@ -21,7 +21,7 @@ rules:
     resources: ["events"]
     verbs: ["get", "list", "watch", "create", "update", "patch"]
   - apiGroups: [ "" ]
-    resources: [ "pods", "pods/log" ]
+    resources: [ "pods" ]
     verbs: [ "create", "get", "list", "watch", "update", "bind", "delete" ]
   - apiGroups: [ "" ]
     resources: [ "persistentvolumeclaims", "persistentvolumes"  ]
@@ -50,10 +50,6 @@ rules:
   - apiGroups: ["argoproj.io"]
     resources: ["workflowtemplates", "workflowtemplates/finalizers", "clusterworkflowtemplates", "clusterworkflowtemplates/finalizers"]
     verbs: ["create", "delete", "get", "list", "watch", "update"]
-  - apiGroups: ["kubeflow.org"]
-    resources: ["*"]
-    verbs: ["create", "delete", "get", "list", "watch", "update"]
-
 ---
 # ClusterRoleBinding for paddleflow-server
 kind: ClusterRoleBinding
@@ -91,6 +87,7 @@ data:
             pfs.fs.id: $(pfs.fs.id)
             pfs.fs.info: $(pfs.fs.info)
             pfs.fs.cache: $(pfs.fs.cache)
+            pfs.server: $(pfs.server)
           volumeHandle: pfs-$(pfs.fs.id)-$(namespace)-pv
   default_pvc.yaml: |2-
       kind: PersistentVolumeClaim
@@ -187,7 +184,6 @@ data:
       fs:
         defaultPVPath: "./config/fs/default_pv.yaml"
         defaultPVCPath: "./config/fs/default_pvc.yaml"
-        servicePort: 8999
 
       job:
         reclaim:
@@ -213,11 +209,6 @@ data:
 
       monitor:
         server: ""
-    
-      metrics:
-        enable: true
-        port: 8231
-
   single.yaml: |-
     apiVersion: v1
     kind: Pod
@@ -411,24 +402,6 @@ spec:
   selector:
     app: paddleflow-server
 ---
-apiVersion: v1
-kind: Service
-metadata:
-  labels:
-    app: paddleflow-server
-  name: paddleflow-server-metrics
-  namespace: paddleflow
-spec:
-  ports:
-    - name: metrics
-      nodePort: 8231
-      port: 8231
-      targetPort: 8231
-      protocol: TCP
-  selector:
-    app: paddleflow-server
-  type: NodePort
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -466,20 +439,14 @@ spec:
                 fieldRef:
                   apiVersion: v1
                   fieldPath: spec.nodeName
-          image: paddleflow/paddleflow-server:1.4.2
+          image: paddleflow/paddleflow-server:1.4.3
           imagePullPolicy: IfNotPresent
           name: paddleflow-server
           ports:
             - containerPort: 8999
               name: port-0
               protocol: TCP
-          resources:
-            requests:
-              memory: "1G"
-              cpu: "500m"
-            limits:
-              memory: "8G"
-              cpu: "8000m"
+          resources: {}
           securityContext:
             privileged: false
             runAsGroup: 1000

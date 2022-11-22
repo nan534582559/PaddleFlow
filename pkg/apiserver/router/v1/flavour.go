@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi"
@@ -28,11 +29,11 @@ import (
 
 	"github.com/PaddlePaddle/PaddleFlow/pkg/apiserver/common"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/apiserver/controller/flavour"
+	"github.com/PaddlePaddle/PaddleFlow/pkg/apiserver/models"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/apiserver/router/util"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/config"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/logger"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/schema"
-	"github.com/PaddlePaddle/PaddleFlow/pkg/storage"
 )
 
 // FlavourRouter is flavour api router
@@ -146,7 +147,7 @@ func (fr *FlavourRouter) updateFlavour(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response, err := flavour.UpdateFlavour(&ctx, &request)
+	response, err := flavour.UpdateFlavour(&request)
 	if err != nil {
 		ctx.Logging().Errorf("update flavour failed. flavour request:%v error:%s", request, err.Error())
 		common.RenderErrWithMessage(w, ctx.RequestID, ctx.ErrorCode, err.Error())
@@ -245,7 +246,7 @@ func validateCreateFlavour(ctx *logger.RequestContext, request *flavour.CreateFl
 		return errors.New("field not be empty")
 	}
 	if request.ClusterName != "" {
-		clusterInfo, err := storage.Cluster.GetClusterByName(request.ClusterName)
+		clusterInfo, err := models.GetClusterByName(request.ClusterName)
 		if err != nil {
 			ctx.ErrorCode = common.ClusterNameNotFound
 			return err
@@ -290,7 +291,22 @@ func (fr *FlavourRouter) deleteFlavour(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := flavour.DeleteFlavour(&ctx, flavourName); err != nil {
+	if !common.IsRootUser(ctx.UserName) {
+		ctx.ErrorCode = common.AccessDenied
+		ctx.Logging().Errorln("delete user failed, root is needed.")
+		common.RenderErrWithMessage(w, ctx.RequestID, ctx.ErrorCode, "")
+		return
+	}
+
+	if _, err := flavour.GetFlavour(flavourName); err != nil {
+		ctx.ErrorCode = common.FlavourNotFound
+		ctx.Logging().Errorf("get flavour failed. flavour %s error:%s", flavourName, err.Error())
+		common.RenderErrWithMessage(w, ctx.RequestID, ctx.ErrorCode, err.Error())
+		return
+	}
+
+	userIDInt64, _ := strconv.ParseInt(ctx.UserID, 10, 64)
+	if err := flavour.DeleteFlavour(flavourName, userIDInt64); err != nil {
 		ctx.Logging().Errorf("delete flavour %s failed, error:%s", flavourName, err.Error())
 		common.RenderErrWithMessage(w, ctx.RequestID, ctx.ErrorCode, err.Error())
 		return

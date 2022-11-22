@@ -31,11 +31,9 @@ from paddleflow.cli.job import job
 from paddleflow.cli.log import log
 from paddleflow.cli.run import run
 from paddleflow.cli.pipeline import pipeline
-from paddleflow.cli.schedule import schedule
 from paddleflow.cli.cluster import cluster
 from paddleflow.cli.flavour import flavour
 from paddleflow.cli.statistics import statistics
-from paddleflow.cli.version import version
 from paddleflow.common.util import get_default_config_path
 
 DEFAULT_PADDLEFLOW_PORT = 8999
@@ -91,13 +89,11 @@ def main():
     cli.add_command(fs)
     cli.add_command(run)
     cli.add_command(pipeline)
-    cli.add_command(schedule)
     cli.add_command(cluster)
     cli.add_command(flavour)
     cli.add_command(log)
     cli.add_command(job)
     cli.add_command(statistics)
-    cli.add_command(version)
     try:
         cli(obj={}, auto_envvar_prefix='paddleflow')
     except Exception as e:

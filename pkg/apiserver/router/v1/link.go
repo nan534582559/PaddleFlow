@@ -515,7 +515,7 @@ func (lr *LinkRouter) getLink(w http.ResponseWriter, r *http.Request) {
 }
 
 func linkResponseFromModel(link model.Link) *api.LinkResponse {
-	fsName, _, _ := fsUtils.GetFsNameAndUserNameByFsID(link.FsID)
+	fsName, _ := fsUtils.FsIDToFsNameUsername(link.FsID)
 	return &api.LinkResponse{
 		FsName:        fsName,
 		FsPath:        link.FsPath,

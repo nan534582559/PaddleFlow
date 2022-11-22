@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/PaddlePaddle/PaddleFlow/pkg/apiserver/common"
+	"github.com/PaddlePaddle/PaddleFlow/pkg/apiserver/models"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/logger"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/schema"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/model"
@@ -37,7 +38,7 @@ const (
 	MockNamespace   = "paddle"
 )
 
-var clusterInfo = model.ClusterInfo{
+var clusterInfo = models.ClusterInfo{
 	Name:          MockClusterName,
 	Description:   "Description",
 	Endpoint:      "Endpoint",
@@ -54,10 +55,10 @@ func TestCreateGrant(t *testing.T) {
 	driver.InitMockDB()
 	ctx := &logger.RequestContext{UserName: MockRootUser}
 	// mock queue & cluster
-	assert.Nil(t, storage.Cluster.CreateCluster(&clusterInfo))
-	cluser, _ := storage.Cluster.GetClusterByName(MockClusterName)
+	assert.Nil(t, models.CreateCluster(&clusterInfo))
+	cluser, _ := models.GetClusterByName(MockClusterName)
 
-	err := storage.Queue.CreateQueue(&model.Queue{
+	err := models.CreateQueue(&models.Queue{
 		Name:      MockResourceID,
 		Namespace: "fake",
 		ClusterId: cluser.ID,

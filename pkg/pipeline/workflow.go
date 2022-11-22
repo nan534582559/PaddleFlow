@@ -178,23 +178,20 @@ func (bwf *BaseWorkflow) checkLoopArgument(component schema.Component) error {
 	switch loop := loop.(type) {
 	case []interface{}:
 		for _, v := range loop {
-			switch v := v.(type) {
-			case int, int64, float32, float64:
-				// do nothing
-			case string:
+			_, ok1 := v.(int)
+			_, ok2 := v.(int64)
+			_, ok3 := v.(float32)
+			_, ok4 := v.(float64)
+			loopStr, ok5 := v.(string)
+			if !ok1 && !ok2 && !ok3 && !ok4 && !ok5 {
+				return fmt.Errorf("[%v]in loopArgument is invalid, each one with list type can only have int or float or string", v)
+			}
+			if ok5 {
 				checker := VariableChecker{}
 				// list中的元素不能为模板，如果使用了模板，则报错
-				if err := checker.CheckRefArgument(v); err == nil {
-					return fmt.Errorf("[%v]in loopArgument of component [%s] is invalid, each one in list loopArgument must not be templete",
-						v, component.GetName())
+				if err := checker.CheckRefCurArgument(loopStr); err == nil {
+					return fmt.Errorf("[%v]in loopArgument is invalid, each one in list loopArgument must not be templete", loopStr)
 				}
-			case []interface{}:
-				if err := CheckListParam(v); err != nil {
-					return fmt.Errorf("component [%s] check loopArgument failed: %s", component.GetName(), err.Error())
-				}
-			default:
-				return fmt.Errorf("[%v]in loopArgument  of component [%s] is invalid, each one with list type can only have int, float, string, list",
-					v, component.GetName())
 			}
 		}
 	case string:
@@ -231,13 +228,12 @@ func (bwf *BaseWorkflow) checkLoopArgument(component schema.Component) error {
 				return fmt.Errorf("loopArgument [%s] unmarshal to list failed, error: %s", loop, err.Error())
 			}
 			for _, arg := range listArg {
-				switch arg := arg.(type) {
-				case int, int64, float32, float64, string:
-					// do nothing
-				case []interface{}:
-					if err := CheckListParam(arg); err != nil {
-						return fmt.Errorf("loopArgument of component[%s] check failed: %s", component.GetName(), err.Error())
-					}
+				switch arg.(type) {
+				case string:
+				case int:
+				case int64:
+				case float32:
+				case float64:
 				default:
 					return fmt.Errorf("each one in list loopArgument should be int or float or string")
 				}
@@ -496,7 +492,7 @@ func (bwf *BaseWorkflow) checkExtra() error {
 func (bwf *BaseWorkflow) checkRunYaml() error {
 	variableChecker := VariableChecker{}
 
-	if err := variableChecker.CheckRunAndPPLName(bwf.Source.Name); err != nil {
+	if err := variableChecker.CheckVarName(bwf.Source.Name); err != nil {
 		return fmt.Errorf("check pipelineName[%s] in run[%s] failed: %s", bwf.Source.Name, bwf.RunID, err.Error())
 	}
 
@@ -836,7 +832,7 @@ func (bwf *BaseWorkflow) checkComps() error {
 	}
 
 	if err := bwf.checkCompAttrs(); err != nil {
-		bwf.log().Errorf("check components' attribute failed. err: %s", err.Error())
+		bwf.log().Errorf("check deps failed. err: %s", err.Error())
 		return err
 	}
 

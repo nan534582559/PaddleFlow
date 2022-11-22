@@ -27,15 +27,14 @@ import (
 	"volcano.sh/apis/pkg/apis/scheduling/v1beta1"
 
 	"github.com/PaddlePaddle/PaddleFlow/pkg/apiserver/common"
+	"github.com/PaddlePaddle/PaddleFlow/pkg/apiserver/models"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/config"
 	gormErrors "github.com/PaddlePaddle/PaddleFlow/pkg/common/errors"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/logger"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/resources"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/schema"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/uuid"
-	"github.com/PaddlePaddle/PaddleFlow/pkg/job/api"
-	runtime "github.com/PaddlePaddle/PaddleFlow/pkg/job/runtime_v2"
-	"github.com/PaddlePaddle/PaddleFlow/pkg/model"
+	"github.com/PaddlePaddle/PaddleFlow/pkg/job/runtime"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/storage"
 )
 
@@ -73,11 +72,11 @@ type CreateQueueResponse struct {
 }
 
 type UpdateQueueResponse struct {
-	model.Queue
+	models.Queue
 }
 
 type GetQueueResponse struct {
-	model.Queue
+	models.Queue
 }
 
 type ListQueueRequest struct {
@@ -88,14 +87,14 @@ type ListQueueRequest struct {
 
 type ListQueueResponse struct {
 	common.MarkerInfo
-	QueueList []model.Queue `json:"queueList"`
+	QueueList []models.Queue `json:"queueList"`
 }
 
 func ListQueue(ctx *logger.RequestContext, marker string, maxKeys int, name string) (ListQueueResponse, error) {
 	ctx.Logging().Debugf("begin list queue.")
 	listQueueResponse := ListQueueResponse{}
 	listQueueResponse.IsTruncated = false
-	listQueueResponse.QueueList = []model.Queue{}
+	listQueueResponse.QueueList = []models.Queue{}
 
 	var pk int64
 	var err error
@@ -109,7 +108,7 @@ func ListQueue(ctx *logger.RequestContext, marker string, maxKeys int, name stri
 		}
 	}
 
-	queueList, err := storage.Queue.ListQueue(pk, maxKeys, name, ctx.UserName)
+	queueList, err := models.ListQueue(pk, maxKeys, name, ctx.UserName)
 	if err != nil {
 		ctx.Logging().Errorf("models list queue failed. err:[%s]", err.Error())
 		ctx.ErrorCode = common.InternalError
@@ -137,7 +136,7 @@ func ListQueue(ctx *logger.RequestContext, marker string, maxKeys int, name stri
 }
 
 func IsLastQueuePk(ctx *logger.RequestContext, pk int64) bool {
-	lastQueue, err := storage.Queue.GetLastQueue()
+	lastQueue, err := models.GetLastQueue()
 	if err != nil {
 		ctx.Logging().Errorf("get last queue failed. error:[%s]", err.Error())
 	}
@@ -170,13 +169,13 @@ func CreateQueue(ctx *logger.RequestContext, request *CreateQueueRequest) (Creat
 			return CreateQueueResponse{}, errors.New("clusterName is not found")
 		}
 	}
-	clusterInfo, err := storage.Cluster.GetClusterByName(request.ClusterName)
+	clusterInfo, err := models.GetClusterByName(request.ClusterName)
 	if err != nil {
 		ctx.ErrorCode = common.ClusterNotFound
 		ctx.Logging().Errorln("create request failed. error: cluster not found by Name.")
 		return CreateQueueResponse{}, errors.New("cluster not found by Name")
 	}
-	if clusterInfo.Status != model.ClusterStatusOnLine {
+	if clusterInfo.Status != models.ClusterStatusOnLine {
 		ctx.ErrorCode = common.InvalidClusterStatus
 		errMsg := fmt.Sprintf("cluster[%s] not in online status, operator not permit", clusterInfo.Name)
 		ctx.Logging().Errorln(errMsg)
@@ -215,7 +214,7 @@ func CreateQueue(ctx *logger.RequestContext, request *CreateQueueRequest) (Creat
 			request.Name, strings.Join(errStr, ","))
 	}
 
-	exist := strings.EqualFold(request.Name, defaultQueueName) || storage.Queue.IsQueueExist(request.Name)
+	exist := strings.EqualFold(request.Name, defaultQueueName) || models.IsQueueExist(request.Name)
 	if exist {
 		ctx.Logging().Errorf("create queue failed. queueName[%s] exist.", request.Name)
 		ctx.ErrorCode = common.QueueNameDuplicated
@@ -290,8 +289,8 @@ func CreateQueue(ctx *logger.RequestContext, request *CreateQueueRequest) (Creat
 	}
 
 	request.Status = schema.StatusQueueCreating
-	queueInfo := model.Queue{
-		Model: model.Model{
+	queueInfo := models.Queue{
+		Model: models.Model{
 			ID: uuid.GenerateID(common.PrefixQueue),
 		},
 		Name:             request.Name,
@@ -304,7 +303,7 @@ func CreateQueue(ctx *logger.RequestContext, request *CreateQueueRequest) (Creat
 		SchedulingPolicy: request.SchedulingPolicy,
 		Status:           schema.StatusQueueCreating,
 	}
-	err = storage.Queue.CreateQueue(&queueInfo)
+	err = models.CreateQueue(&queueInfo)
 	if err != nil {
 		ctx.Logging().Errorf("create request failed. error:%s", err.Error())
 		if gormErrors.GetErrorCode(err) == gormErrors.ErrorKeyIsDuplicated {
@@ -320,15 +319,14 @@ func CreateQueue(ctx *logger.RequestContext, request *CreateQueueRequest) (Creat
 		ctx.Logging().Errorf("GlobalVCQueue create request failed. error:%s", err.Error())
 		ctx.ErrorCode = common.QueueResourceNotMatch
 		ctx.ErrorMessage = err.Error()
-		deleteErr := storage.Queue.DeleteQueue(request.Name)
+		deleteErr := models.DeleteQueue(request.Name)
 		if deleteErr != nil {
 			ctx.Logging().Errorf("delete request roll back db failed. error:%s", deleteErr.Error())
 		}
 		return CreateQueueResponse{}, err
 	}
 
-	rQ := api.NewQueueInfo(queueInfo)
-	err = runtimeSvc.CreateQueue(rQ)
+	err = runtimeSvc.CreateQueue(&queueInfo)
 	if err != nil && k8serrors.IsAlreadyExists(err) {
 		_, err = UpdateQueue(ctx, &UpdateQueueRequest{
 			Name:         request.Name,
@@ -342,14 +340,14 @@ func CreateQueue(ctx *logger.RequestContext, request *CreateQueueRequest) (Creat
 		ctx.Logging().Errorf("GlobalVCQueue create request failed. error:%s", err.Error())
 		ctx.ErrorCode = common.QueueResourceNotMatch
 		ctx.ErrorMessage = err.Error()
-		deleteErr := storage.Queue.DeleteQueue(request.Name)
+		deleteErr := models.DeleteQueue(request.Name)
 		if deleteErr != nil {
 			ctx.Logging().Errorf("delete request roll back db failed. error:%s", deleteErr.Error())
 		}
 		return CreateQueueResponse{}, err
 	}
 
-	err = storage.Queue.UpdateQueueStatus(request.Name, schema.StatusQueueOpen)
+	err = models.UpdateQueueStatus(request.Name, schema.StatusQueueOpen)
 	if err != nil {
 		fmt.Errorf("update request status to open failed")
 	}
@@ -374,23 +372,23 @@ func UpdateQueue(ctx *logger.RequestContext, request *UpdateQueueRequest) (Updat
 		ctx.Logging().Errorln("update request failed. error: queueName is not found.")
 		return UpdateQueueResponse{}, errors.New("queueName is not found")
 	}
-	queueInfo, err := storage.Queue.GetQueueByName(request.Name)
+	queueInfo, err := models.GetQueueByName(request.Name)
 	if err != nil {
 		ctx.ErrorCode = common.RecordNotFound
 		ctx.Logging().Errorf("get queue failed. error:%s", err.Error())
 		return UpdateQueueResponse{}, err
 	}
 	// record a snapshot of queue
-	var queueSnapshot model.Queue
-	storage.Queue.DeepCopyQueue(queueInfo, &queueSnapshot)
+	var queueSnapshot models.Queue
+	models.DeepCopyQueue(queueInfo, &queueSnapshot)
 	// get cluster, if closed, refuse to update queue
-	clusterInfo, err := storage.Cluster.GetClusterById(queueInfo.ClusterId)
+	clusterInfo, err := models.GetClusterById(queueInfo.ClusterId)
 	if err != nil {
 		ctx.ErrorCode = common.ClusterNotFound
 		ctx.Logging().Errorln("update request failed. error: cluster not found by Name.")
 		return UpdateQueueResponse{}, errors.New("cluster not found by Name")
 	}
-	if clusterInfo.Status != model.ClusterStatusOnLine {
+	if clusterInfo.Status != models.ClusterStatusOnLine {
 		ctx.ErrorCode = common.InvalidClusterStatus
 		errMsg := fmt.Sprintf("cluster[%s] not in online status, operator not permit", clusterInfo.Name)
 		ctx.Logging().Errorln(errMsg)
@@ -490,7 +488,7 @@ func UpdateQueue(ctx *logger.RequestContext, request *UpdateQueueRequest) (Updat
 	}
 
 	// update queue in db
-	if err = storage.Queue.UpdateQueue(&queueInfo); err != nil {
+	if err = models.UpdateQueue(&queueInfo); err != nil {
 		ctx.Logging().Errorf("update queue failed. error:%s", err.Error())
 		ctx.ErrorCode = common.QueueUpdateFailed
 		return UpdateQueueResponse{}, err
@@ -499,12 +497,11 @@ func UpdateQueue(ctx *logger.RequestContext, request *UpdateQueueRequest) (Updat
 	// update queue in cluster, which will roll back changes in db if failed
 	if updateClusterRequired {
 		log.Debugf("required to update queue in cluster. queueName:[%s]", queueInfo.Name)
-		rQ := api.NewQueueInfo(queueInfo)
-		if err = runtimeSvc.UpdateQueue(rQ); err != nil {
+		if err = runtimeSvc.UpdateQueue(&queueInfo); err != nil {
 			ctx.Logging().Errorf("GlobalVCQueue create request failed. error:%s", err.Error())
 			ctx.ErrorCode = common.QueueResourceNotMatch
 			ctx.ErrorMessage = err.Error()
-			if rollbackErr := storage.Queue.UpdateQueue(&queueSnapshot); rollbackErr != nil {
+			if rollbackErr := models.UpdateQueue(&queueSnapshot); rollbackErr != nil {
 				ctx.Logging().Errorf("update request roll back db failed.queue:%s error:%v",
 					queueSnapshot.Name, rollbackErr)
 				err = rollbackErr
@@ -578,13 +575,13 @@ func GetQueueByName(ctx *logger.RequestContext, queueName string) (GetQueueRespo
 		return GetQueueResponse{}, fmt.Errorf("get queueName[%s] failed.\n", queueName)
 	}
 
-	queue, err := storage.Queue.GetQueueByName(queueName)
+	queue, err := models.GetQueueByName(queueName)
 	if err != nil {
 		ctx.ErrorCode = common.QueueNameNotFound
 		return GetQueueResponse{}, fmt.Errorf("queueName[%s] is not found.\n", queueName)
 	}
 
-	clusterInfo, err := storage.Cluster.GetClusterById(queue.ClusterId)
+	clusterInfo, err := models.GetClusterById(queue.ClusterId)
 	if err != nil {
 		ctx.Logging().Errorf("get clusterInfo by ClusterId %s failed. error: %s",
 			queue.ClusterId, err.Error())
@@ -593,7 +590,7 @@ func GetQueueByName(ctx *logger.RequestContext, queueName string) (GetQueueRespo
 
 	// calculate the idle resource of queue
 	usedResource := resources.EmptyResource()
-	if clusterInfo.Status == model.ClusterStatusOnLine {
+	if clusterInfo.Status == models.ClusterStatusOnLine {
 		runtimeSvc, err := runtime.GetOrCreateRuntime(clusterInfo)
 		if err != nil {
 			ctx.ErrorCode = common.InternalError
@@ -603,8 +600,7 @@ func GetQueueByName(ctx *logger.RequestContext, queueName string) (GetQueueRespo
 		switch clusterInfo.ClusterType {
 		case schema.KubernetesType:
 			kubeRuntime := runtimeSvc.(*runtime.KubeRuntime)
-			rQ := api.NewQueueInfo(queue)
-			usedResource, err = kubeRuntime.GetQueueUsedQuota(rQ)
+			usedResource, err = kubeRuntime.GetQueueUsedQuota(&queue)
 			if err != nil {
 				ctx.ErrorCode = common.InternalError
 				ctx.Logging().Errorf("get queue used quota failed. queueName:[%s] error:[%s]", queueName, err.Error())
@@ -633,20 +629,20 @@ func DeleteQueue(ctx *logger.RequestContext, queueName string) error {
 		return errors.New("delete queue failed")
 	}
 
-	queue, err := storage.Queue.GetQueueByName(queueName)
+	queue, err := models.GetQueueByName(queueName)
 	if err != nil {
 		ctx.ErrorCode = common.QueueNameNotFound
 		return fmt.Errorf("queueName[%s] is not found.\n", queueName)
 	}
 
-	isInUse, jobsInfo := storage.Queue.IsQueueInUse(queue.ID)
+	isInUse, jobsInfo := models.IsQueueInUse(queue.ID)
 	if isInUse {
 		ctx.ErrorCode = common.QueueIsInUse
 		ctx.ErrorMessage = fmt.Sprintf("queue[%s] is inuse, and jobs on queue: %v", queueName, jobsInfo)
 		ctx.Logging().Errorf(ctx.ErrorMessage)
 		return fmt.Errorf(ctx.ErrorMessage)
 	}
-	clusterInfo, err := storage.Cluster.GetClusterById(queue.ClusterId)
+	clusterInfo, err := models.GetClusterById(queue.ClusterId)
 	if err != nil {
 		ctx.Logging().Errorf("get clusterInfo by ClusterId %s failed. error: %s",
 			queue.ClusterId, err.Error())
@@ -658,14 +654,13 @@ func DeleteQueue(ctx *logger.RequestContext, queueName string) error {
 		ctx.Logging().Errorf("delete queue failed. queueName:[%s] error:[%s]", queueName, err.Error())
 		return errors.New("delete queue failed")
 	}
-	rQ := api.NewQueueInfo(queue)
-	err = runtimeSvc.DeleteQueue(rQ)
+	err = runtimeSvc.DeleteQueue(&queue)
 	if err != nil {
 		ctx.ErrorCode = common.InternalError
 		ctx.Logging().Errorf("delete queue failed. queueName:[%s] error:[%s]", queueName, err.Error())
 		return errors.New("delete queue failed")
 	}
-	err = storage.Queue.DeleteQueue(queueName)
+	err = models.DeleteQueue(queueName)
 	if err != nil {
 		ctx.ErrorCode = common.InternalError
 		ctx.ErrorMessage = err.Error()
@@ -680,7 +675,7 @@ func DeleteQueue(ctx *logger.RequestContext, queueName string) error {
 // InitDefaultQueue init default queue for single cluster environment
 func InitDefaultQueue() error {
 	log.Info("starting init data for single cluster: initDefaultQueue")
-	if defaultQueue, err := storage.Queue.GetQueueByName(config.DefaultQueueName); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+	if defaultQueue, err := models.GetQueueByName(config.DefaultQueueName); err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		log.Errorf("GetQueueByName %s failed, err: %v", config.DefaultQueueName, err)
 		return err
 	} else if err == nil {

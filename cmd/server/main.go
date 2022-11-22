@@ -20,13 +20,11 @@ import (
 	jobCtrl "github.com/PaddlePaddle/PaddleFlow/pkg/apiserver/controller/job"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/apiserver/controller/pipeline"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/apiserver/controller/queue"
+	"github.com/PaddlePaddle/PaddleFlow/pkg/apiserver/models"
 	router "github.com/PaddlePaddle/PaddleFlow/pkg/apiserver/router/v1"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/config"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/logger"
-	"github.com/PaddlePaddle/PaddleFlow/pkg/common/schema"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/job"
-	"github.com/PaddlePaddle/PaddleFlow/pkg/metrics"
-	"github.com/PaddlePaddle/PaddleFlow/pkg/model"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/monitor"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/storage"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/storage/driver"
@@ -111,16 +109,9 @@ func start() error {
 
 	stopChan := make(chan struct{})
 	defer close(stopChan)
-	go fs.MountPodController(ServerConf.Fs.MountPodExpire, ServerConf.Fs.MountPodIntervalTime, stopChan)
+	go fs.CleanMountPodController(ServerConf.Fs.MountPodExpire, ServerConf.Fs.CleanMountPodIntervalTime, stopChan)
 
 	trace_logger.Start(ServerConf.TraceLog)
-
-	if ServerConf.Metrics.Enable {
-		if err := startMetricsService(ServerConf.Metrics.Port); err != nil {
-			log.Errorf("create job perf metrics service failed, err %v", err)
-			gracefullyExit(err)
-		}
-	}
 
 	go func() {
 		if err := HttpSvr.ListenAndServe(); err != nil && errors.Is(err, http.ErrServerClosed) {
@@ -147,6 +138,15 @@ func initConfig() error {
 	}
 
 	config.GlobalServerConfig = ServerConf
+
+	// make sure template job yaml file exist
+	if filesNum, err := config.FileNumsInDir(ServerConf.Job.DefaultJobYamlDir); err != nil {
+		log.Errorf("validate default job yaml dir[%s] failed. error: %s\n", ServerConf.Job.DefaultJobYamlDir, err)
+		return err
+	} else if filesNum == 0 {
+		log.Errorf("validate default job yaml dir[%s] failed. error: yaml files not found", ServerConf.Job.DefaultJobYamlDir)
+		return errors.New("yaml files not found")
+	}
 	return nil
 }
 
@@ -204,11 +204,6 @@ func setup() {
 		gracefullyExit(err)
 	}
 
-	if err = driver.InitCache(ServerConf.Log.Level); err != nil {
-		log.Errorf("init cache err: %v", err)
-		gracefullyExit(err)
-	}
-
 	if err := newAndStartJobManager(); err != nil {
 		log.Errorf("create pfjob manager failed, err %v", err)
 		gracefullyExit(err)
@@ -222,17 +217,12 @@ func setup() {
 		log.Errorf("InitDefaultPVC err %v", err)
 		gracefullyExit(err)
 	}
-	if err := config.InitJobTemplate(ServerConf.Job.DefaultJobYamlPath); err != nil {
-		log.Errorf("InitDefaultJobTemplate err %v", err)
-		gracefullyExit(err)
-	}
 
 	if err := initPrometheusClient(ServerConf.Monitor.Server); err != nil {
 		log.Errorf("create prometheus client failed, err %v", err)
 		gracefullyExit(err)
 	}
 
-	metrics.InitMetrics()
 }
 
 func newAndStartJobManager() error {
@@ -247,38 +237,13 @@ func newAndStartJobManager() error {
 		log.Errorf("new job manager failed, error: %v", err)
 		return err
 	}
-	go runtimeMgr.Start(storage.Cluster.ActiveClusters, storage.Job.ListQueueJob)
+	go runtimeMgr.Start(models.ActiveClusters, models.ListQueueJob)
 	return nil
 }
 
 func initPrometheusClient(address string) error {
 	err := monitor.NewClientAPI(address)
 	return err
-}
-
-func startMetricsService(port int) (err error) {
-	defer func() {
-		err1 := recover()
-		if err1 != nil {
-			err = fmt.Errorf("%v", err1)
-		}
-	}()
-	listQueue := func() []model.Queue {
-		queues, err := storage.Queue.ListQueue(0, 0, "", "root")
-		if err != nil {
-			log.Errorf("%s", err)
-		}
-		return queues
-	}
-
-	listJobByStatus := func() []model.Job {
-		jobs := storage.Job.ListJobByStatus(schema.StatusJobRunning)
-		return jobs
-	}
-
-	//  TODO: add job func
-	metrics.StartMetricsService(port, listQueue, listJobByStatus)
-	return
 }
 
 func gracefullyExit(err error) {

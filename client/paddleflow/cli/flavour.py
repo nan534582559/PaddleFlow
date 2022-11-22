@@ -53,16 +53,16 @@ def list(ctx, maxkeys, marker=None, clustername="", key=""):
 
 
 @flavour.command()
-@click.argument('name')
+@click.option('-n', "--flavourname", required=True)
 @click.pass_context
-def show(ctx, name):
+def show(ctx, flavourname):
     """ show flavour info.\n
-    name: the name of flavour
+    flavourname: the name of flavour
     """
     client = ctx.obj['client']
     output_format = ctx.obj['output']
 
-    valid, response = client.show_flavour(name)
+    valid, response = client.show_flavour(flavourname)
     if valid:
         _print_flavour_info(response, output_format)
     else:
@@ -71,44 +71,46 @@ def show(ctx, name):
 
 
 @flavour.command()
-@click.argument('name')
+@click.option('-n',"--flavourname", required=True)
 @click.option('-c', '--cpu', help="CPU, e.g. --cpu 4")
 @click.option('-m', '--memory', help="Memory, e.g. --memroy 10G")
 @click.option('-s','--scalar', help='The scalar resource of flavour, e.g. --scalar a=b,c=d')
+@click.option('-cn', '--clusterName', help="Cluster name that flavour belongs to.")
 @click.pass_context
-def update(ctx, name, cpu=None, memory=None, scalar=None, clustername=None):
-    """ update info by name.\n
-    CPU: the CPU of flavour.
-    MEM: the Memory of flavour.
-    Scalar: the scalar resource of flavour.
+def update(ctx, flavourname, cpu=None, memory=None, scalar=None, clustername=None):
+    """ update info from flavourname.\n
+    flavourname: flavour name.
     """
     client = ctx.obj['client']
     # scalar_resources
     scalar_resources = {}
     if scalar:
         args = scalar.split(',')
-        scalar_resources = dict([item.split('=') for item in args])
+        scalar_resources['scalarResources'] = dict([item.split('=') for item in args])
     # call update_flavour
-    valid, response = client.update_flavour(name, cpu, memory, scalar_resources, clustername)
+    valid, response = client.update_flavour(flavourname, cpu, memory, scalar_resources, clustername)
     if valid:
-        click.echo("update [%s] success" % (response))
+        click.echo("cluster[%s] update success, id[%s]" %
+                   (clustername, response))
     else:
         click.echo("cluster update failed with message[%s]" % response)
         sys.exit(1)
 
 
 @flavour.command()
-@click.argument('name')
+@click.option('-n', "--flavourname", required=True)
 @click.option('-c', '--cpu', help="CPU, e.g. --cpu 4", required=True)
 @click.option('-m', '--memory', help="Memory, e.g. --memroy 10G", required=True)
 @click.option('-s', '--scalar', help='The scalar resource of flavour, e.g. --scalar a=b,c=d')
+@click.option('-cn', '--clustername', help='Cluster name that flavour belongs to.')
 @click.pass_context
-def create(ctx, name, cpu, memory, scalar=None, clustername=None):
+def create(ctx, flavourname, cpu, memory, scalar=None, clustername=None):
     """ create flavour.\n
     NAME: the name of flavour.\n
     CPU: the CPU of flavour.\n
     MEM: the Memory of flavour.\n
     Scalar: the scalar resource of flavour.\n
+    CLUSTERNAME: the cluster name.
    """
     client = ctx.obj['client']
 
@@ -116,26 +118,27 @@ def create(ctx, name, cpu, memory, scalar=None, clustername=None):
     if scalar:
         args = scalar.split(',')
         scalar_resources = dict([item.split('=') for item in args])
+        click.echo("scalar_resources={}".format(scalar_resources))
 
-    valid, response = client.add_flavour(name=name, cpu=cpu, memory=memory, scalar_resources=scalar_resources, cluster_name=clustername)
+    valid, response = client.add_flavour(name=flavourname, cpu=cpu, memory=memory, scalar_resources=scalar_resources, cluster_name=clustername)
     if valid:
-        click.echo("flavour[%s] create success " % name)
+        click.echo("flavour[%s] create success " % flavourname)
     else:
         click.echo("flavour create failed with message[%s]" % response)
         sys.exit(1)
 
 
 @flavour.command()
-@click.argument('name')
+@click.option('-n',"--flavourname", required=True)
 @click.pass_context
-def delete(ctx, name):
+def delete(ctx, flavourname):
     """ delete flavour.\n
-    name: the name of flavour
+    flavour_name: the name of flavour
     """
     client = ctx.obj['client']
-    valid, response = client.del_flavour(name)
+    valid, response = client.del_flavour(flavourname)
     if valid:
-        click.echo("flavour[%s] delete success " % name)
+        click.echo("flavour[%s] delete success " % flavourname)
     else:
         click.echo("flavour delete failed with message[%s]" % response)
         sys.exit(1)

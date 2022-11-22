@@ -25,6 +25,7 @@ import (
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
+	"path"
 	"strconv"
 	"strings"
 	"syscall"
@@ -52,13 +53,11 @@ import (
 	"github.com/PaddlePaddle/PaddleFlow/pkg/monitor"
 )
 
-const TimeFormat = "2006-01-02-15:04:05"
-
 var opts *libfuse.MountOptions
 
 var logConf = logger.LogConfig{
 	Dir:             "./log",
-	FilePrefix:      "./pfs-fuse-" + time.Now().Format(TimeFormat),
+	FilePrefix:      "./pfs-fuse",
 	Level:           "INFO",
 	MaxKeepDays:     90,
 	MaxFileNum:      100,
@@ -137,43 +136,19 @@ func setup(c *cli.Context) error {
 		log.Errorf("init vfs failed: %v", err)
 		return err
 	}
+	signalHandle(mountPoint)
 	go monitor.UpdateBaseMetrics()
 	// whether start metrics server
 	if c.Bool("metrics-service-on") {
 		metricsAddr := exposeMetricsService(c.String("server"), c.Int("metrics-service-port"))
 		log.Debugf("mount opts: %+v, metricsAddr: %s", opts, metricsAddr)
 	}
-	if c.Int("pprof-port") != 0 {
+	if c.Bool("pprof-enable") {
 		go func() {
 			http.ListenAndServe(fmt.Sprintf(":%d", c.Int("pprof-port")), nil)
 		}()
 	}
-
-	if c.Bool("clean-cache") {
-		if c.String("meta-cache-path") != "" {
-			cleanCacheInfo.CachePaths = append(cleanCacheInfo.CachePaths, c.String("meta-cache-path"))
-		}
-		if c.String("data-cache-path") != "" {
-			cleanCacheInfo.CachePaths = append(cleanCacheInfo.CachePaths, c.String("data-cache-path"))
-		}
-		if len(cleanCacheInfo.CachePaths) > 0 {
-			cleanCacheInfo.Clean = true
-		}
-	}
-	signalHandle(mountPoint)
-	processStatistics()
 	return nil
-}
-
-func processStatistics() {
-	go func() {
-		for {
-			availableMem, memPercent := utils.GetMemPercent()
-			cpuPercent := utils.GetCpuPercent()
-			log.Infof("mem avaliable %vM percent %v%% cpuPercent %v%%", availableMem, fmt.Sprintf("%.2f", memPercent), fmt.Sprintf("%.2f", cpuPercent))
-			time.Sleep(30 * time.Second)
-		}
-	}()
 }
 
 func exposeMetricsService(hostServer string, port int) string {
@@ -216,11 +191,6 @@ func wrapRegister(mountPoint string) *prometheus.Registry {
 
 func mount(c *cli.Context) error {
 	log.Tracef("mount setup VFS")
-	defer func() {
-		if err := recover(); err != nil {
-			log.Errorf("panic err: %v", err)
-		}
-	}()
 	if err := setup(c); err != nil {
 		log.Errorf("mount setup() err: %v", err)
 		return err
@@ -247,21 +217,7 @@ func mount(c *cli.Context) error {
 		os.Exit(-1)
 	}
 	server.Wait()
-	return cleanCache()
-}
-
-func cleanCache() (errRet error) {
-	// clean cache if set
-	if cleanCacheInfo.Clean {
-		log.Infof("start clean cache dir: %+v", cleanCacheInfo)
-		for _, dir := range cleanCacheInfo.CachePaths {
-			if err := os.RemoveAll(dir); err != nil {
-				log.Errorf("doUmount: remove path[%s] failed: %v", dir, err)
-				errRet = err
-			}
-		}
-	}
-	return errRet
+	return err
 }
 
 func InitVFS(c *cli.Context, registry *prometheus.Registry) error {
@@ -277,6 +233,15 @@ func InitVFS(c *cli.Context, registry *prometheus.Registry) error {
 		fsMeta = common.FSMeta{
 			UfsType: common.LocalType,
 			SubPath: localRoot,
+		}
+		linkPath, linkRoot := c.String("link-path"), c.String("link-root")
+		if linkPath != "" && linkRoot != "" {
+			links = map[string]common.FSMeta{
+				path.Clean(linkPath): common.FSMeta{
+					UfsType: common.LocalType,
+					SubPath: linkRoot,
+				},
+			}
 		}
 	} else if c.String(schema.FuseKeyFsInfo) != "" {
 		fs, err := utils.ProcessFSInfo(c.String(schema.FuseKeyFsInfo))
@@ -370,9 +335,7 @@ func InitVFS(c *cli.Context, registry *prometheus.Registry) error {
 	m := meta.Config{
 		AttrCacheExpire:  c.Duration("meta-cache-expire"),
 		EntryCacheExpire: c.Duration("entry-cache-expire"),
-		PathCacheExpire:  c.Duration("path-cache-expire"),
 		Config: kv.Config{
-			FsID:      fsMeta.ID,
 			Driver:    c.String("meta-cache-driver"),
 			CachePath: c.String("meta-cache-path"),
 		},
@@ -417,13 +380,7 @@ func signalHandle(mp string) {
 		for {
 			waitForSignal := <-signalChan
 			log.Infof("fuse exit with signal %v", waitForSignal)
-			go func() {
-				if doUmount(mp, false) != nil {
-					if err := doUmount(mp, true); err != nil {
-						log.Errorf("doUmount failed: %v", err)
-					}
-				}
-			}()
+			go func() { _ = doUmount(mp, true) }()
 			go func() {
 				time.Sleep(time.Second * 3)
 				os.Exit(1)

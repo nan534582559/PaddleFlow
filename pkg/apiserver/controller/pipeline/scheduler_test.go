@@ -31,9 +31,7 @@ import (
 	"github.com/PaddlePaddle/PaddleFlow/pkg/apiserver/models"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/logger"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/schema"
-	"github.com/PaddlePaddle/PaddleFlow/pkg/model"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/pipeline"
-	"github.com/PaddlePaddle/PaddleFlow/pkg/storage"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/storage/driver"
 )
 
@@ -48,12 +46,12 @@ func insertPipeline(t *testing.T, logEntry *log.Entry) (pplID1, pplID2, pplVersi
 	pplYaml, err := os.ReadFile("../../../../example/pipeline/base_pipeline/run.yaml")
 	assert.Nil(t, err)
 
-	ppl1 := model.Pipeline{
+	ppl1 := models.Pipeline{
 		Name:     "ppl1",
 		Desc:     "ppl1",
 		UserName: "user1",
 	}
-	pplVersion1 := model.PipelineVersion{
+	pplVersion1 := models.PipelineVersion{
 		FsID:         "user1-fsname",
 		FsName:       "fsname",
 		YamlPath:     "./run.yml",
@@ -62,12 +60,12 @@ func insertPipeline(t *testing.T, logEntry *log.Entry) (pplID1, pplID2, pplVersi
 		UserName:     "user1",
 	}
 
-	ppl2 := model.Pipeline{
+	ppl2 := models.Pipeline{
 		Name:     "ppl2",
 		Desc:     "ppl2",
 		UserName: "root",
 	}
-	pplVersion2 := model.PipelineVersion{
+	pplVersion2 := models.PipelineVersion{
 		FsID:         "root-fsname2",
 		FsName:       "fsname2",
 		YamlPath:     "./run.yml",
@@ -76,7 +74,7 @@ func insertPipeline(t *testing.T, logEntry *log.Entry) (pplID1, pplID2, pplVersi
 		UserName:     "root",
 	}
 
-	pplID1, pplVersionID1, err = storage.Pipeline.CreatePipeline(logEntry, &ppl1, &pplVersion1)
+	pplID1, pplVersionID1, err = models.CreatePipeline(logEntry, &ppl1, &pplVersion1)
 	assert.Nil(t, err)
 	assert.Equal(t, ppl1.Pk, int64(1))
 	assert.Equal(t, pplID1, ppl1.ID)
@@ -87,7 +85,7 @@ func insertPipeline(t *testing.T, logEntry *log.Entry) (pplID1, pplID2, pplVersi
 	assert.Equal(t, pplVersionID1, "1")
 	assert.Equal(t, pplVersion1.PipelineID, ppl1.ID)
 
-	pplID2, pplVersionID2, err = storage.Pipeline.CreatePipeline(logEntry, &ppl2, &pplVersion2)
+	pplID2, pplVersionID2, err = models.CreatePipeline(logEntry, &ppl2, &pplVersion2)
 	assert.Nil(t, err)
 	assert.Equal(t, ppl2.Pk, int64(2))
 	assert.Equal(t, pplID2, ppl2.ID)

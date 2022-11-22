@@ -23,10 +23,8 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/PaddlePaddle/PaddleFlow/pkg/apiserver/common"
-	"github.com/PaddlePaddle/PaddleFlow/pkg/common/logger"
+	"github.com/PaddlePaddle/PaddleFlow/pkg/apiserver/models"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/schema"
-	"github.com/PaddlePaddle/PaddleFlow/pkg/model"
-	"github.com/PaddlePaddle/PaddleFlow/pkg/storage"
 )
 
 const customFlavour = "customFlavour"
@@ -60,18 +58,18 @@ type CreateFlavourResponse struct {
 
 // UpdateFlavourResponse convey response for update flavour
 type UpdateFlavourResponse struct {
-	model.Flavour
+	models.Flavour
 }
 
 // ListFlavourResponse convey response for list flavour
 type ListFlavourResponse struct {
 	common.MarkerInfo
-	FlavourList []model.Flavour `json:"flavourList"`
+	FlavourList []models.Flavour `json:"flavourList"`
 }
 
 // CreateFlavour handler for creating flavour
 func CreateFlavour(request *CreateFlavourRequest) (*CreateFlavourResponse, error) {
-	flavour := model.Flavour{
+	flavour := models.Flavour{
 		Name:            request.Name,
 		CPU:             request.CPU,
 		Mem:             request.Mem,
@@ -80,7 +78,7 @@ func CreateFlavour(request *CreateFlavourRequest) (*CreateFlavourResponse, error
 		ClusterName:     request.ClusterName,
 		UserName:        request.UserName,
 	}
-	if err := storage.Flavour.CreateFlavour(&flavour); err != nil {
+	if err := models.CreateFlavour(&flavour); err != nil {
 		return nil, err
 	}
 
@@ -91,17 +89,13 @@ func CreateFlavour(request *CreateFlavourRequest) (*CreateFlavourResponse, error
 }
 
 // UpdateFlavour handler for updating flavour
-func UpdateFlavour(ctx *logger.RequestContext, request *UpdateFlavourRequest) (*UpdateFlavourResponse, error) {
+func UpdateFlavour(request *UpdateFlavourRequest) (*UpdateFlavourResponse, error) {
 	flavour, err := GetFlavour(request.Name)
 	if err != nil {
 		log.Errorf("get flavour %s failed when update", request.Name)
 		return nil, err
 	}
-	if err = common.CheckPermission(ctx.UserName, flavour.UserName, common.ResourceTypeFlavour, flavour.ID); err != nil {
-		ctx.ErrorCode = common.ActionNotAllowed
-		ctx.Logging().Errorln(err.Error())
-		return nil, err
-	}
+
 	if request.ClusterName != flavour.ClusterName {
 		errMsg := fmt.Sprintf("not support operate to update flavour[%s]'s cluster", request.Name)
 		log.Error(errMsg)
@@ -131,7 +125,7 @@ func UpdateFlavour(ctx *logger.RequestContext, request *UpdateFlavourRequest) (*
 
 	if isChanged {
 		log.Debugf("field changed, update flavour %s to %v", flavour.Name, flavour)
-		if err := storage.Flavour.UpdateFlavour(&flavour); err != nil {
+		if err := models.UpdateFlavour(&flavour); err != nil {
 			log.Errorf("update flavour in db failed, err=%v", err)
 			return nil, err
 		}
@@ -141,8 +135,8 @@ func UpdateFlavour(ctx *logger.RequestContext, request *UpdateFlavourRequest) (*
 }
 
 // GetFlavour handler for getting flavour
-func GetFlavour(name string) (model.Flavour, error) {
-	return storage.Flavour.GetFlavour(name)
+func GetFlavour(name string) (models.Flavour, error) {
+	return models.GetFlavour(name)
 }
 
 // ListFlavour handler for listing flavour
@@ -163,7 +157,7 @@ func ListFlavour(maxKeys int, marker, clusterName, queryKey string) (*ListFlavou
 	}
 	var clusterID string
 	if clusterName != "" {
-		cluster, err := storage.Cluster.GetClusterByName(clusterName)
+		cluster, err := models.GetClusterByName(clusterName)
 		if err != nil {
 			log.Errorf("cluster %s not found, err=%v", clusterName, err)
 			return nil, err
@@ -171,7 +165,7 @@ func ListFlavour(maxKeys int, marker, clusterName, queryKey string) (*ListFlavou
 		clusterID = cluster.ID
 	}
 
-	flavours, err := storage.Flavour.ListFlavour(pk, maxKeys, clusterID, queryKey)
+	flavours, err := models.ListFlavour(pk, maxKeys, clusterID, queryKey)
 	if err != nil {
 		log.Errorf("models list flavour failed. err:[%s]", err.Error())
 		return &response, err
@@ -196,22 +190,8 @@ func ListFlavour(maxKeys int, marker, clusterName, queryKey string) (*ListFlavou
 }
 
 // DeleteFlavour handler for deleting flavour
-func DeleteFlavour(ctx *logger.RequestContext, flavourName string) error {
-	flavour, err := GetFlavour(flavourName)
-	if err != nil {
-		ctx.ErrorCode = common.FlavourNotFound
-		err = fmt.Errorf("delete flavour %s occur a error:%s", flavourName, err.Error())
-		ctx.Logging().Errorln(err)
-		return err
-	}
-
-	if err = common.CheckPermission(ctx.UserName, flavour.UserName, common.ResourceTypeFlavour, flavour.ID); err != nil {
-		ctx.ErrorCode = common.ActionNotAllowed
-		ctx.Logging().Errorln(err.Error())
-		return err
-	}
-
-	if err = storage.Flavour.DeleteFlavour(flavourName); err != nil {
+func DeleteFlavour(flavourName string, userID int64) error {
+	if err := models.DeleteFlavour(flavourName); err != nil {
 		log.Errorf("delete flavour %s failed, err: %v", flavourName, err)
 		return err
 	}
@@ -221,7 +201,7 @@ func DeleteFlavour(ctx *logger.RequestContext, flavourName string) error {
 
 // IsLastFlavourPk get last flavour that usually be used for indicating last page
 func IsLastFlavourPk(pk int64) bool {
-	lastFlavour, err := storage.Flavour.GetLastFlavour()
+	lastFlavour, err := models.GetLastFlavour()
 	if err != nil {
 		log.Errorf("get last flavour failed. error:[%s]", err.Error())
 	}
@@ -246,7 +226,7 @@ func GetFlavourWithCheck(reqFlavour schema.Flavour) (schema.Flavour, error) {
 		}
 		return reqFlavour, nil
 	}
-	flavour, err := storage.Flavour.GetFlavour(reqFlavour.Name)
+	flavour, err := models.GetFlavour(reqFlavour.Name)
 	if err != nil {
 		log.Errorf("Get flavour by name %s failed when creating job, err:%v", reqFlavour.Name, err)
 		return schema.Flavour{}, fmt.Errorf("get flavour[%s] failed, err:%v", reqFlavour.Name, err)

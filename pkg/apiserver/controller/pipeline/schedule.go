@@ -31,7 +31,6 @@ import (
 	"github.com/PaddlePaddle/PaddleFlow/pkg/apiserver/router/util"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/logger"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/schema"
-	"github.com/PaddlePaddle/PaddleFlow/pkg/storage"
 )
 
 type CreateScheduleRequest struct {
@@ -223,7 +222,7 @@ func CreateSchedule(ctx *logger.RequestContext, request *CreateScheduleRequest) 
 	}
 
 	// 校验创建Schedule 的 User是否有Pipline对应的Yaml中所有FSName的权限
-	pplVer, err := storage.Pipeline.GetPipelineVersion(request.PipelineID, request.PipelineVersionID)
+	pplVer, err := models.GetPipelineVersion(request.PipelineID, request.PipelineVersionID)
 	if err != nil {
 		ctx.ErrorCode = common.InvalidArguments
 		errMsg := fmt.Sprintf("create schedule failed, get PipelineVersion error:[%s]", err.Error())

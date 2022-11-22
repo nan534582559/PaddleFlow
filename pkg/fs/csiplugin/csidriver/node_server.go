@@ -19,7 +19,6 @@ package csidriver
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/kubernetes-csi/drivers/pkg/csi-common"
@@ -38,6 +37,7 @@ import (
 type nodeServer struct {
 	nodeId string
 	*csicommon.DefaultNodeServer
+	credentialInfo credentials
 }
 
 func (ns *nodeServer) NodeGetCapabilities(ctx context.Context, req *csi.NodeGetCapabilitiesRequest) (*csi.NodeGetCapabilitiesResponse, error) {
@@ -67,23 +67,29 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context,
 
 	volumeID := req.VolumeId
 	volumeContext := req.GetVolumeContext()
+
+	csiconfig.UserNameRoot = ns.credentialInfo.usernameRoot
+	csiconfig.PassWordRoot = ns.credentialInfo.passwordRoot
+	// assume that the paddleflow server address will not be changed
+	csiconfig.PaddleFlowServer = volumeContext[schema.PFSServer]
 	csiconfig.ClusterID = volumeContext[schema.PFSClusterID]
+
+	mountInfo, err := mount.ProcessMountInfo(volumeContext[schema.PFSInfo], volumeContext[schema.PFSCache],
+		targetPath, req.GetReadonly())
+	if err != nil {
+		log.Errorf("ProcessMountInfo err: %v", err)
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	log.Infof("Node publish mountInfo [%+v]", mountInfo)
 
 	k8sClient, err := utils.GetK8sClient()
 	if err != nil {
 		log.Errorf("get k8s client failed: %v", err)
 		return nil, err
 	}
+	mountInfo.K8sClient = k8sClient
 
-	mountInfo, err := mount.ConstructMountInfo(volumeContext[schema.PFSInfo], volumeContext[schema.PFSCache],
-		targetPath, k8sClient, req.GetReadonly())
-	if err != nil {
-		log.Errorf("ConstructMountInfo err: %v", err)
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-	log.Infof("Node publish mountInfo [%+v]", mountInfo)
-
-	if err = mountVolume(volumeID, mountInfo); err != nil {
+	if err = mountVolume(volumeID, mountInfo, req.GetReadonly()); err != nil {
 		log.Errorf("mount filesystem[%s] failed: %v", volumeContext[schema.PFSID], err)
 		return &csi.NodePublishVolumeResponse{}, status.Error(codes.Internal, err.Error())
 	}
@@ -92,23 +98,13 @@ func (ns *nodeServer) NodePublishVolume(ctx context.Context,
 
 func (ns *nodeServer) NodeUnpublishVolume(ctx context.Context,
 	req *csi.NodeUnpublishVolumeRequest) (*csi.NodeUnpublishVolumeResponse, error) {
-	targetPath := req.GetTargetPath()
+
 	mountInfo := mount.Info{
-		TargetPath: targetPath,
+		TargetPath: req.GetTargetPath(),
 	}
 	if err := mount.PodUnmount(req.VolumeId, mountInfo); err != nil {
 		log.Errorf("[UMount]: volumeID[%s] and targetPath[%s] with err: %s", req.VolumeId, mountInfo.TargetPath, err.Error())
 		return nil, err
-	}
-
-	pathsToCleanup := []string{targetPath}
-	// clean source path for process mount
-	// pod mount no source path to clean, and is ignored in the func
-	sourcePath := utils.GetSourceMountPath(filepath.Dir(targetPath))
-	pathsToCleanup = append(pathsToCleanup, sourcePath)
-	if err := utils.CleanUpMountPoints(pathsToCleanup); err != nil {
-		log.Errorf("NodeUnpublishVolume: cleanup mount points err: %v", err)
-		return nil, status.Error(codes.Internal, err.Error())
 	}
 
 	return &csi.NodeUnpublishVolumeResponse{}, nil
@@ -132,35 +128,26 @@ func (ns *nodeServer) NodeExpandVolume(ctx context.Context,
 	return nil, status.Error(codes.Unimplemented, "NodeExpandVolume is not implemented")
 }
 
-func mountVolume(volumeID string, mountInfo mount.Info) error {
-	log.Infof("mountVolume: indepedentMp:%t, readOnly:%t", mountInfo.FS.IndependentMountProcess, mountInfo.ReadOnly)
+func mountVolume(volumeID string, mountInfo mount.Info, readOnly bool) error {
+	log.Infof("mountVolume: indepedentMp:%t, readOnly:%t", mountInfo.FS.IndependentMountProcess, readOnly)
 	if !mountInfo.FS.IndependentMountProcess && mountInfo.FS.Type != common.GlusterFSType {
 		// business pods use a separate source path
 		if err := mount.PFSMount(volumeID, mountInfo); err != nil {
 			log.Errorf("MountThroughPod err: %v", err)
 			return err
 		}
-	} else {
-		// mount source path
-		if err := os.MkdirAll(mountInfo.SourcePath, 0750); err != nil {
-			err := fmt.Errorf("process mount [%s] failed when makedir of source path %s, err: %v",
-				mountInfo.FS.ID, mountInfo.SourcePath, err)
-			log.Error(err.Error())
+		if err := bindMountVolume(schema.GetBindSource(mountInfo.FS.ID), mountInfo.TargetPath, readOnly); err != nil {
+			log.Errorf("mountVolume[%s] of fs[%s] failed when bindMountVolume, err: %v", volumeID, mountInfo.FS.ID, err)
 			return err
 		}
-		log.Infof("mount with cmd %s and args %v", mountInfo.Cmd, mountInfo.Args)
-		output, err := utils.ExecCmdWithTimeout(mountInfo.Cmd, mountInfo.Args)
+	} else {
+		cmdName, args := mountInfo.MountCmd()
+		log.Debugf("independent mount cmd: %s and args: %v", cmdName, args)
+		output, err := utils.ExecCmdWithTimeout(cmdName, args)
 		if err != nil {
 			log.Errorf("exec mount failed: [%v], output[%v]", err, string(output))
 			return err
 		}
-	}
-	// bind to target path
-	if err := bindMountVolume(mountInfo.SourcePath, mountInfo.TargetPath, mountInfo.ReadOnly); err != nil {
-		err := fmt.Errorf("bindMountVolume[%s] of fs[%s] failed when bind from %s to %s, err: %v",
-			volumeID, mountInfo.FS.ID, mountInfo.SourcePath, mountInfo.TargetPath, err)
-		log.Error(err.Error())
-		return err
 	}
 	return nil
 }

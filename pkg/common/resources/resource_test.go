@@ -32,8 +32,8 @@ var marshalTestCases = []struct {
 		name: "resource with 10 milli cpu",
 		res: Resource{
 			Resources: map[string]Quantity{
-				ResCPU:           10,
-				ResMemory:        1024 * 1000,
+				"cpu":            10,
+				"mem":            1024 * 1000,
 				"nvidia.com/gpu": 2,
 			},
 		},
@@ -43,8 +43,8 @@ var marshalTestCases = []struct {
 		name: "resource with 1 cpu",
 		res: Resource{
 			Resources: map[string]Quantity{
-				ResCPU:           1000,
-				ResMemory:        1024 * 1024 * 1024,
+				"cpu":            1000,
+				"mem":            1024 * 1024 * 1024,
 				"nvidia.com/gpu": 2,
 			},
 		},
@@ -54,8 +54,8 @@ var marshalTestCases = []struct {
 		name: "resource with 1k cpu",
 		res: Resource{
 			Resources: map[string]Quantity{
-				ResCPU:           1000 * 1000,
-				ResMemory:        1024 * 1000 * 1000,
+				"cpu":            1000 * 1000,
+				"mem":            1024 * 1000 * 1000,
 				"nvidia.com/gpu": 2,
 			},
 		},
@@ -70,36 +70,31 @@ var unmarshalTestCases = []struct {
 }{
 	{
 		name:         "resource with null string",
-		resourceJSON: `{"cpu":"","memory":""}`,
+		resourceJSON: `{"cpu":"","mem":""}`,
 		err:          nil,
 	},
 	{
 		name:         "resource with zero string",
-		resourceJSON: `{"cpu":"0","memory":"1Ki"}`,
+		resourceJSON: `{"cpu":"0","mem":"1Ki"}`,
 		err:          nil,
 	},
 	{
 		name:         "resource with 10 milli cpu",
-		resourceJSON: `{"cpu":"10m","memory":"1Mi"}`,
+		resourceJSON: `{"cpu":"10m","mem":"1Mi"}`,
 		err:          nil,
 	},
 	{
 		name:         "resource with 1 cpu",
-		resourceJSON: `{"cpu":"1","memory":"1M"}`,
+		resourceJSON: `{"cpu":"1","mem":"1M"}`,
 		err:          nil,
 	},
 	{
 		name:         "resource with 1k cpu",
-		resourceJSON: `{"cpu":"1k","memory":"1Gi"}`,
+		resourceJSON: `{"cpu":"1k","mem":"1Gi"}`,
 		err:          nil,
 	},
 	{
 		name:         "resource with 1G mem",
-		resourceJSON: `{"cpu":"1","memory":"1G"}`,
-		err:          nil,
-	},
-	{
-		name:         "test compatible with old mem",
 		resourceJSON: `{"cpu":"1","mem":"1G"}`,
 		err:          nil,
 	},
@@ -124,48 +119,48 @@ func TestNewResourceFromInfo(t *testing.T) {
 		{
 			name: "resource with empty cpu",
 			resourceInfo: map[string]string{
-				ResCPU:    "",
-				ResMemory: "",
+				"cpu": "",
+				"mem": "",
 			},
 			err: nil,
 		},
 		{
 			name: "resource with zero cpu",
 			resourceInfo: map[string]string{
-				ResCPU:    "0",
-				ResMemory: "1G",
+				"cpu": "0",
+				"mem": "1G",
 			},
 			err: nil,
 		},
 		{
 			name: "resource with zero mem",
 			resourceInfo: map[string]string{
-				ResCPU:    "1",
-				ResMemory: "0",
+				"cpu": "1",
+				"mem": "0",
 			},
 			err: nil,
 		},
 		{
 			name: "resource with 10 milli cpu",
 			resourceInfo: map[string]string{
-				ResCPU:    "10m",
-				ResMemory: "1Mi",
+				"cpu": "10m",
+				"mem": "1Mi",
 			},
 			err: nil,
 		},
 		{
 			name: "resource with 1 cpu",
 			resourceInfo: map[string]string{
-				ResCPU:    "1",
-				ResMemory: "1Ki",
+				"cpu": "1",
+				"mem": "1Ki",
 			},
 			err: nil,
 		},
 		{
 			name: "resource with 1k cpu",
 			resourceInfo: map[string]string{
-				ResCPU:    "1k",
-				ResMemory: "1024",
+				"cpu": "1k",
+				"mem": "1024",
 			},
 			err: nil,
 		},
@@ -178,7 +173,7 @@ func TestNewResourceFromInfo(t *testing.T) {
 			if r != nil {
 				rJSON, err := json.Marshal(r)
 				assert.Equal(t, nil, err)
-				t.Logf("result origin: %v, str: %s\n", r.ToMap(), string(rJSON))
+				t.Logf("result origin: %v, str: %s\n", r.Resources, string(rJSON))
 			}
 		})
 	}
@@ -234,46 +229,4 @@ func BenchmarkResource_UnmarshalJSON(b *testing.B) {
 			}
 		})
 	}
-}
-
-func TestResource_Op(t *testing.T) {
-	r1, err := NewResourceFromMap(map[string]string{
-		ResCPU:    "1",
-		ResMemory: "2Gi",
-	})
-	assert.Equal(t, nil, err)
-
-	r2, err := NewResourceFromMap(map[string]string{
-		ResCPU:    "4",
-		ResMemory: "8Gi",
-	})
-	assert.Equal(t, nil, err)
-
-	// test add
-	r3 := r1.Clone()
-	r3.Add(r2)
-	t.Logf("r1 add r2 is: %v", r3)
-
-	// test sub
-	r4 := r2.Clone()
-	r4.Sub(r1)
-	t.Logf("r2 sub r1 is: %v", r4)
-
-	// test multi
-	r5 := r1.Clone()
-	r5.Multi(2)
-	t.Logf("r1 multi 2 is: %v", r5)
-
-	// test zero
-	r6, err := NewResourceFromMap(map[string]string{
-		ResCPU:    "0",
-		ResMemory: "0",
-	})
-	assert.Equal(t, nil, err)
-	assert.Equal(t, true, r6.IsZero())
-	assert.Equal(t, false, r5.IsZero())
-
-	// test negative
-	assert.Equal(t, false, r5.IsNegative())
-
 }

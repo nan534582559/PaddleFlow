@@ -23,9 +23,8 @@ import (
 
 	"github.com/PaddlePaddle/PaddleFlow/pkg/apiserver/common"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/apiserver/controller/job"
-	"github.com/PaddlePaddle/PaddleFlow/pkg/common/logger"
+	"github.com/PaddlePaddle/PaddleFlow/pkg/apiserver/models"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/schema"
-	"github.com/PaddlePaddle/PaddleFlow/pkg/storage"
 )
 
 type Job interface {
@@ -70,17 +69,15 @@ type BaseJob struct {
 type PaddleFlowJob struct {
 	BaseJob
 	Image        string
-	userName     string
 	mainFS       *schema.FsMount
 	extraFS      []schema.FsMount
 	eventChannel chan<- WorkflowEvent
 }
 
-func NewPaddleFlowJob(name, image, userName string, eventChannel chan<- WorkflowEvent, mainFS *schema.FsMount, extraFS []schema.FsMount) *PaddleFlowJob {
+func NewPaddleFlowJob(name, image string, eventChannel chan<- WorkflowEvent, mainFS *schema.FsMount, extraFS []schema.FsMount) *PaddleFlowJob {
 	return &PaddleFlowJob{
 		BaseJob:      *NewBaseJob(name),
 		Image:        image,
-		userName:     userName,
 		eventChannel: eventChannel,
 		mainFS:       mainFS,
 		extraFS:      extraFS,
@@ -222,10 +219,7 @@ func (pfj *PaddleFlowJob) Start() (string, error) {
 // 停止作业接口
 func (pfj *PaddleFlowJob) Stop() error {
 	// 此函数不更新job.Status，job.endTime，统一通过watch更新
-	logCtx := &logger.RequestContext{
-		UserName: pfj.userName,
-	}
-	err := job.StopJob(logCtx, pfj.ID)
+	err := job.StopJobByID(pfj.ID)
 	if err != nil {
 		return err
 	}
@@ -240,7 +234,7 @@ func (pfj *PaddleFlowJob) Check() (schema.JobStatus, error) {
 		err := errors.New(errMsg)
 		return "", err
 	}
-	status, err := storage.Job.GetJobStatusByID(pfj.ID)
+	status, err := models.GetJobStatusByID(pfj.ID)
 	if err != nil {
 		return "", err
 	}
@@ -253,7 +247,7 @@ func (pfj *PaddleFlowJob) Watch() {
 	tryCount := 0
 	for {
 		// 在连续查询job子系统出错的情况下，把错误信息返回给run，但不会停止轮询
-		jobInstance, err := storage.Job.GetJobByID(pfj.ID)
+		jobInstance, err := models.GetJobByID(pfj.ID)
 		if err != nil {
 			if tryCount < TryMax {
 				tryCount += 1

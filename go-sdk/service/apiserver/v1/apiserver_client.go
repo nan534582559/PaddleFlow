@@ -27,9 +27,6 @@ type APIV1Interface interface {
 	QueueGetter
 	FlavourGetter
 	JobGetter
-	RunGetter
-	PipelineGetter
-	ScheduleGetter
 }
 
 // APIV1Client is used to interact with features provided by the group.
@@ -59,18 +56,6 @@ func (c *APIV1Client) Flavour() FlavourInterface {
 
 func (c *APIV1Client) Job() JobInterface {
 	return newJob(c)
-}
-
-func (c *APIV1Client) Run() RunInterface {
-	return newRun(c)
-}
-
-func (c *APIV1Client) Pipeline() PipelineInterface {
-	return newPipeline(c)
-}
-
-func (c *APIV1Client) Schedule() ScheduleInterface {
-	return newSchedule(c)
 }
 
 // RESTClient returns a RESTClient that is used to communicate

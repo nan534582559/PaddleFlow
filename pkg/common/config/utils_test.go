@@ -18,8 +18,6 @@ package config
 
 import (
 	"testing"
-
-	"github.com/stretchr/testify/assert"
 )
 
 func TestInitConfigFromYaml(t *testing.T) {
@@ -43,24 +41,5 @@ func TestInitConfigFromYaml(t *testing.T) {
 		if (err != nil && err.Error() != test.msg) || (err == nil && ServerConf.Log.Level == "") {
 			t.Errorf("testcase[%d] New ServerConfig[%+v] init failed, err: %v", i, ServerConf, err)
 		}
-	}
-}
-
-func TestInitJobTemplate(t *testing.T) {
-	tests := []struct {
-		name     string
-		confPath string
-	}{
-		{
-			name:     "job template test",
-			confPath: "../../../config/server/default/job/job_template.yaml",
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			err := InitJobTemplate(test.confPath)
-			assert.Equal(t, nil, err)
-			t.Logf("default job template number %d", len(DefaultJobTemplate))
-		})
 	}
 }

@@ -15,8 +15,6 @@ limitations under the License.
 """
 
 import re
-import random
-import string
 from typing import Union
 
 
@@ -34,27 +32,3 @@ def validate_string_by_regex(string: str, regex: str):
         return False
     else:
         return True
-
-
-def random_code(length: int):
-    """ generate a random string of the specified length, which consist of letters and digits,
-    """
-    return "".join(random.sample(string.ascii_letters + string.digits, length))
-
-def trans_10_36(num):
-    """ 将10进制数转换成36进制数 
-    """
-    chars = string.digits + string.ascii_lowercase
-    result = ""
-    symbol = ""
-    
-    if num < 0:
-        symbol = "-"
-        num = -num 
-    
-    while num >= 36:
-        result = chars[num % 36] + result
-        num = num // 36 
-        
-    result = chars[num % 36] + result
-    return symbol + result

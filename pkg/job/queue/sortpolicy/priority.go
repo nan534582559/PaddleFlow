@@ -20,7 +20,7 @@ import (
 	"github.com/PaddlePaddle/PaddleFlow/pkg/job/api"
 )
 
-// PriorityPolicyName indicates the name of queue sort policy.
+// PolicyName indicates name of queue sort policy.
 const PriorityPolicyName = "priority"
 
 type priorityPolicy struct {

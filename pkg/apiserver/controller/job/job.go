@@ -18,17 +18,15 @@ package job
 
 import (
 	"fmt"
-
 	log "github.com/sirupsen/logrus"
 
 	"github.com/PaddlePaddle/PaddleFlow/pkg/apiserver/common"
+	"github.com/PaddlePaddle/PaddleFlow/pkg/apiserver/models"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/logger"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/resources"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/schema"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/job/api"
-	runtime "github.com/PaddlePaddle/PaddleFlow/pkg/job/runtime_v2"
-	"github.com/PaddlePaddle/PaddleFlow/pkg/model"
-	"github.com/PaddlePaddle/PaddleFlow/pkg/storage"
+	"github.com/PaddlePaddle/PaddleFlow/pkg/job/runtime"
 )
 
 // CreateSingleJobRequest convey request for create job
@@ -132,20 +130,22 @@ type CreateJobResponse struct {
 	ID string `json:"id"`
 }
 
+func CheckPermission(ctx *logger.RequestContext) error {
+	// TODO: check permission
+	return nil
+}
+
 func DeleteJob(ctx *logger.RequestContext, jobID string) error {
-	job, err := storage.Job.GetJobByID(jobID)
+	if err := CheckPermission(ctx); err != nil {
+		return err
+	}
+	job, err := models.GetJobByID(jobID)
 	if err != nil {
 		ctx.ErrorCode = common.JobNotFound
 		msg := fmt.Sprintf("get job %s failed, err: %v", jobID, err)
 		log.Errorf(msg)
 		return fmt.Errorf(msg)
 	}
-	if err = common.CheckPermission(ctx.UserName, job.UserName, common.ResourceTypeJob, jobID); err != nil {
-		ctx.ErrorCode = common.ActionNotAllowed
-		ctx.Logging().Errorln(err.Error())
-		return err
-	}
-
 	// check job status before delete
 	if !schema.IsImmutableJobStatus(job.Status) {
 		ctx.ErrorCode = common.ActionNotAllowed
@@ -153,7 +153,7 @@ func DeleteJob(ctx *logger.RequestContext, jobID string) error {
 		log.Errorf(msg)
 		return fmt.Errorf(msg)
 	}
-	err = storage.Job.DeleteJob(jobID)
+	err = models.DeleteJob(jobID)
 	if err != nil {
 		ctx.ErrorCode = common.InternalError
 		log.Errorf("delete job %s from cluster failed, err: %v", jobID, err)
@@ -163,15 +163,13 @@ func DeleteJob(ctx *logger.RequestContext, jobID string) error {
 }
 
 func StopJob(ctx *logger.RequestContext, jobID string) error {
-	job, err := storage.Job.GetJobByID(jobID)
+	if err := CheckPermission(ctx); err != nil {
+		return err
+	}
+	job, err := models.GetJobByID(jobID)
 	if err != nil {
 		ctx.ErrorCode = common.JobNotFound
 		log.Errorf("get job %s from database failed, err: %v", jobID, err)
-		return err
-	}
-	if err = common.CheckPermission(ctx.UserName, job.UserName, common.ResourceTypeJob, jobID); err != nil {
-		ctx.ErrorCode = common.ActionNotAllowed
-		ctx.Logging().Errorln(err.Error())
 		return err
 	}
 	// check job status
@@ -182,7 +180,7 @@ func StopJob(ctx *logger.RequestContext, jobID string) error {
 	}
 
 	if job.Status == schema.StatusJobInit {
-		err = storage.Job.UpdateJobStatus(jobID, "job is terminated.", schema.StatusJobTerminated)
+		err = models.UpdateJobStatus(jobID, "job is terminated.", schema.StatusJobTerminated)
 	} else {
 		var runtimeSvc runtime.RuntimeService
 		runtimeSvc, err = getRuntimeByQueue(ctx, job.QueueID)
@@ -191,7 +189,7 @@ func StopJob(ctx *logger.RequestContext, jobID string) error {
 			return err
 		}
 		// stop job on cluster
-		go func(job *model.Job, runtimeSvc runtime.RuntimeService) {
+		go func(job *models.Job, runtimeSvc runtime.RuntimeService) {
 			pfjob, err := api.NewJobInfo(job)
 			if err != nil {
 				return
@@ -203,7 +201,7 @@ func StopJob(ctx *logger.RequestContext, jobID string) error {
 			}
 		}(&job, runtimeSvc)
 		// update job status
-		err = storage.Job.UpdateJobStatus(jobID, "job is terminating.", schema.StatusJobTerminating)
+		err = models.UpdateJobStatus(jobID, "job is terminating.", schema.StatusJobTerminating)
 	}
 	if err != nil {
 		log.Errorf("update job[%s] status to [%s] failed, err: %v", jobID, schema.StatusJobTerminating, err)
@@ -213,18 +211,15 @@ func StopJob(ctx *logger.RequestContext, jobID string) error {
 }
 
 func UpdateJob(ctx *logger.RequestContext, request *UpdateJobRequest) error {
-	job, err := storage.Job.GetJobByID(request.JobID)
+	if err := CheckPermission(ctx); err != nil {
+		return err
+	}
+	job, err := models.GetJobByID(request.JobID)
 	if err != nil {
 		ctx.ErrorCode = common.JobNotFound
 		log.Errorf("get job %s from database failed, err: %v", job.ID, err)
 		return err
 	}
-	if err = common.CheckPermission(ctx.UserName, job.UserName, common.ResourceTypeJob, request.JobID); err != nil {
-		ctx.ErrorCode = common.ActionNotAllowed
-		ctx.Logging().Errorln(err.Error())
-		return err
-	}
-
 	// check job status when update job on cluster
 	needUpdateCluster := false
 	if request.Priority != "" {
@@ -264,7 +259,7 @@ func UpdateJob(ctx *logger.RequestContext, request *UpdateJobRequest) error {
 		job.Config.SetAnnotations(key, value)
 	}
 
-	err = storage.Job.UpdateJobConfig(job.ID, job.Config)
+	err = models.UpdateJobConfig(job.ID, job.Config)
 	if err != nil {
 		log.Errorf("update job %s on database failed, err: %v", job.ID, err)
 		ctx.ErrorCode = common.DBUpdateFailed
@@ -272,7 +267,7 @@ func UpdateJob(ctx *logger.RequestContext, request *UpdateJobRequest) error {
 	return err
 }
 
-func updateRuntimeJob(ctx *logger.RequestContext, job *model.Job, request *UpdateJobRequest) error {
+func updateRuntimeJob(ctx *logger.RequestContext, job *models.Job, request *UpdateJobRequest) error {
 	// update labels and annotations
 	runtimeSvc, err := getRuntimeByQueue(ctx, job.QueueID)
 	if err != nil {
@@ -297,13 +292,13 @@ func updateRuntimeJob(ctx *logger.RequestContext, job *model.Job, request *Updat
 }
 
 func getRuntimeByQueue(ctx *logger.RequestContext, queueID string) (runtime.RuntimeService, error) {
-	queue, err := storage.Queue.GetQueueByID(queueID)
+	queue, err := models.GetQueueByID(queueID)
 	if err != nil {
 		log.Errorf("get queue for job failed, err: %v", err)
 		return nil, err
 	}
 	// TODO: GetOrCreateRuntime by cluster id
-	clusterInfo, err := storage.Cluster.GetClusterById(queue.ClusterId)
+	clusterInfo, err := models.GetClusterById(queue.ClusterId)
 	if err != nil {
 		ctx.Logging().Errorf("get clusterInfo by id %s failed. error: %s",
 			queue.ClusterId, err.Error())
@@ -316,4 +311,10 @@ func getRuntimeByQueue(ctx *logger.RequestContext, queueID string) (runtime.Runt
 		return nil, fmt.Errorf("delete queue failed")
 	}
 	return runtimeSvc, nil
+}
+
+// StopJobByID deprecated use StopJob
+func StopJobByID(jobID string) error {
+	logCtx := &logger.RequestContext{}
+	return StopJob(logCtx, jobID)
 }

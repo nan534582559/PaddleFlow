@@ -24,10 +24,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/PaddlePaddle/PaddleFlow/pkg/apiserver/common"
+	"github.com/PaddlePaddle/PaddleFlow/pkg/apiserver/models"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/logger"
 	"github.com/PaddlePaddle/PaddleFlow/pkg/common/schema"
-	"github.com/PaddlePaddle/PaddleFlow/pkg/model"
-	"github.com/PaddlePaddle/PaddleFlow/pkg/storage"
 )
 
 var (
@@ -40,7 +39,7 @@ var (
 
 type DistributedJobSpec struct {
 	Framework schema.Framework `json:"framework,omitempty"`
-	Members   []schema.Member  `json:"members,omitempty"`
+	Members   []models.Member  `json:"members,omitempty"`
 }
 
 type ListJobRequest struct {
@@ -98,7 +97,7 @@ type WorkflowRuntimeInfo struct {
 
 func ListJob(ctx *logger.RequestContext, request ListJobRequest) (*ListJobResponse, error) {
 	ctx.Logging().Debugf("begin list job.")
-	if err := common.CheckPermission(ctx.UserName, ctx.UserName, common.ResourceTypeJob, ""); err != nil {
+	if err := CheckPermission(ctx); err != nil {
 		ctx.ErrorCode = common.ActionNotAllowed
 		ctx.Logging().Errorln(err.Error())
 		return nil, err
@@ -118,12 +117,12 @@ func ListJob(ctx *logger.RequestContext, request ListJobRequest) (*ListJobRespon
 
 	timestampStr := ""
 	if request.Timestamp != 0 {
-		timestampStr = time.Unix(request.Timestamp, 0).Format(model.TimeFormat)
+		timestampStr = time.Unix(request.Timestamp, 0).Format(models.TimeFormat)
 	}
 	queueID := ""
 	if request.Queue != "" {
-		var queue model.Queue
-		queue, err = storage.Queue.GetQueueByName(request.Queue)
+		var queue models.Queue
+		queue, err = models.GetQueueByName(request.Queue)
 		if err != nil {
 			ctx.Logging().Errorf("get queue by queueName[%s] failed, error:[%s]", request.Queue, err.Error())
 			ctx.ErrorCode = common.QueueNameNotFound
@@ -132,9 +131,9 @@ func ListJob(ctx *logger.RequestContext, request ListJobRequest) (*ListJobRespon
 		queueID = queue.ID
 	}
 	// model list
-	jobList, err := storage.Job.ListJob(pk, request.MaxKeys, queueID, request.Status, request.StartTime, timestampStr, ctx.UserName, request.Labels)
+	jobList, err := models.ListJob(pk, request.MaxKeys, queueID, request.Status, request.StartTime, timestampStr, common.UserRoot, request.Labels)
 	if err != nil {
-		ctx.Logging().Errorf("list job failed. err:[%s]", err.Error())
+		ctx.Logging().Errorf("models list job failed. err:[%s]", err.Error())
 		ctx.ErrorCode = common.InternalError
 		return nil, err
 	}
@@ -170,18 +169,18 @@ func ListJob(ctx *logger.RequestContext, request ListJobRequest) (*ListJobRespon
 }
 
 func GetJob(ctx *logger.RequestContext, jobID string) (*GetJobResponse, error) {
-	job, err := storage.Job.GetJobByID(jobID)
-	if err != nil {
-		ctx.ErrorCode = common.JobNotFound
-		ctx.Logging().Errorln(err.Error())
-		return nil, common.NotFoundError(common.ResourceTypeJob, jobID)
-	}
-	if err = common.CheckPermission(ctx.UserName, job.UserName, common.ResourceTypeJob, job.ID); err != nil {
+	if err := CheckPermission(ctx); err != nil {
 		ctx.ErrorCode = common.ActionNotAllowed
 		ctx.Logging().Errorln(err.Error())
 		return nil, err
 	}
 
+	job, err := models.GetJobByID(jobID)
+	if err != nil {
+		ctx.ErrorCode = common.JobNotFound
+		ctx.Logging().Errorln(err.Error())
+		return nil, common.NotFoundError(common.ResourceTypeJob, jobID)
+	}
 	response, err := convertJobToResponse(job, true)
 	if err != nil {
 		return nil, err
@@ -190,7 +189,7 @@ func GetJob(ctx *logger.RequestContext, jobID string) (*GetJobResponse, error) {
 }
 
 func isLastJobPk(ctx *logger.RequestContext, pk int64) bool {
-	lastJob, err := storage.Job.GetLastJob()
+	lastJob, err := models.GetLastJob()
 	if err != nil {
 		ctx.Logging().Errorf("get last job failed. error:[%s]", err.Error())
 	}
@@ -200,7 +199,7 @@ func isLastJobPk(ctx *logger.RequestContext, pk int64) bool {
 	return false
 }
 
-func convertJobToResponse(job model.Job, runtimeFlag bool) (GetJobResponse, error) {
+func convertJobToResponse(job models.Job, runtimeFlag bool) (GetJobResponse, error) {
 	response := GetJobResponse{}
 	b, err := json.Marshal(job)
 	if err != nil {
@@ -213,12 +212,12 @@ func convertJobToResponse(job model.Job, runtimeFlag bool) (GetJobResponse, erro
 		return response, err
 	}
 
-	response.AcceptTime = job.CreatedAt.Format(model.TimeFormat)
+	response.AcceptTime = job.CreatedAt.Format(models.TimeFormat)
 	if job.ActivatedAt.Valid {
-		response.StartTime = job.ActivatedAt.Time.Format(model.TimeFormat)
+		response.StartTime = job.ActivatedAt.Time.Format(models.TimeFormat)
 	}
 	if schema.IsImmutableJobStatus(job.Status) {
-		response.FinishTime = job.UpdatedAt.Format(model.TimeFormat)
+		response.FinishTime = job.UpdatedAt.Format(models.TimeFormat)
 	}
 	response.ID = job.ID
 	response.Name = job.Name
@@ -270,7 +269,7 @@ func convertJobToResponse(job model.Job, runtimeFlag bool) (GetJobResponse, erro
 				Runtimes:  runtimes,
 			}
 		}
-		members := make([]schema.Member, 0)
+		members := make([]models.Member, 0)
 		if job.Members != nil {
 			if err := json.Unmarshal([]byte(job.MembersJson), &members); err != nil {
 				log.Errorf("parse job[%s] member failed, error:[%s]", job.ID, err.Error())
@@ -326,7 +325,7 @@ func parseK8sMeta(runtimeInfo interface{}) (metav1.ObjectMeta, error) {
 }
 
 func getTaskRuntime(jobID string) ([]RuntimeInfo, error) {
-	tasks, err := storage.Job.ListByJobID(jobID)
+	tasks, err := models.ListByJobID(jobID)
 	if err != nil {
 		log.Errorf("list job[%s] tasks failed, error:[%s]", jobID, err.Error())
 		return nil, err
@@ -347,7 +346,7 @@ func getTaskRuntime(jobID string) ([]RuntimeInfo, error) {
 
 func getNodeRuntime(jobID string) ([]DistributedRuntimeInfo, error) {
 	nodeRuntimes := make([]DistributedRuntimeInfo, 0)
-	nodeList, err := storage.Job.ListJobByParentID(jobID)
+	nodeList, err := models.ListJobByParentID(jobID)
 	if err != nil {
 		log.Errorf("list job[%s] nodes failed, error:[%s]", jobID, err.Error())
 		return nil, err
