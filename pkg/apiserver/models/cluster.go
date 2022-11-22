@@ -110,7 +110,7 @@ func ListCluster(pk int64, maxKeys int, clusterNameList []string, clusterStatus 
 	log.Debugf("list cluster, pk: %d, maxKeys: %d", pk, maxKeys)
 
 	var clusterList []ClusterInfo
-	query := storage.DB.Table("cluster_info").Where("deleted_at = '' AND pk > ?", pk)
+	query := storage.DB.Table("cluster_info").Where("deleted_at is null AND pk > ?", pk)
 
 	if len(clusterNameList) > 0 {
 		query = query.Where(" name in ?", clusterNameList)
@@ -135,7 +135,7 @@ func GetLastCluster() (ClusterInfo, error) {
 	log.Debugf("model get last cluster. ")
 
 	clusterInfo := ClusterInfo{}
-	tx := storage.DB.Table("cluster_info").Where("deleted_at = ''").Last(&clusterInfo)
+	tx := storage.DB.Table("cluster_info").Where("deleted_at is null").Last(&clusterInfo)
 	if tx.Error != nil {
 		log.Errorf("get last cluster failed. error:%s", tx.Error.Error())
 		return ClusterInfo{}, tx.Error
@@ -147,7 +147,7 @@ func GetClusterByName(clusterName string) (ClusterInfo, error) {
 	log.Debugf("start to get cluster. clusterName: %s", clusterName)
 
 	var clusterInfo ClusterInfo
-	tx := storage.DB.Table("cluster_info").Where("name = ? AND deleted_at = ''", clusterName)
+	tx := storage.DB.Table("cluster_info").Where("name = ? AND deleted_at is null", clusterName)
 	tx = tx.First(&clusterInfo)
 
 	if tx.Error != nil {
@@ -163,7 +163,7 @@ func GetClusterById(clusterId string) (ClusterInfo, error) {
 	log.Debugf("start to get cluster. clusterId: %s", clusterId)
 
 	var clusterInfo ClusterInfo
-	tx := storage.DB.Table("cluster_info").Where("id = ? AND deleted_at = '' ", clusterId)
+	tx := storage.DB.Table("cluster_info").Where("id = ? AND deleted_at is null ", clusterId)
 	tx = tx.First(&clusterInfo)
 
 	if tx.Error != nil {
@@ -207,7 +207,7 @@ func UpdateCluster(clusterId string, clusterInfo *ClusterInfo) error {
 }
 
 func ActiveClusters() []ClusterInfo {
-	db := storage.DB.Table("cluster_info").Where("deleted_at = '' ")
+	db := storage.DB.Table("cluster_info").Where("deleted_at is null ")
 
 	var clusterList []ClusterInfo
 	err := db.Find(&clusterList).Error

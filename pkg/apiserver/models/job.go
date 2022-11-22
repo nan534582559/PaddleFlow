@@ -162,7 +162,7 @@ func CreateJob(job *Job) error {
 
 func GetJobByID(jobID string) (Job, error) {
 	var job Job
-	tx := storage.DB.Table("job").Where("id = ?", jobID).Where("deleted_at = ''").First(&job)
+	tx := storage.DB.Table("job").Where("id = ?", jobID).Where("deleted_at is null").First(&job)
 	if tx.Error != nil {
 		logger.LoggerForJob(jobID).Errorf("get job failed, err %v", tx.Error.Error())
 		return Job{}, tx.Error
@@ -189,7 +189,7 @@ func GetJobStatusByID(jobID string) (schema.JobStatus, error) {
 }
 
 func DeleteJob(jobID string) error {
-	t := storage.DB.Table("job").Where("id = ?", jobID).Where("deleted_at = ''").UpdateColumn("deleted_at", time.Now().Format(TimeFormat))
+	t := storage.DB.Table("job").Where("id = ?", jobID).Where("deleted_at is null").UpdateColumn("deleted_at", time.Now().Format(TimeFormat))
 	if t.Error != nil {
 		return t.Error
 	}
@@ -207,7 +207,7 @@ func UpdateJobStatus(jobId, errMessage string, newStatus schema.JobStatus) error
 		updatedJob.Message = errMessage
 	}
 	log.Infof("update for job %s, updated content [%+v]", jobId, updatedJob)
-	tx := storage.DB.Model(&Job{}).Where("id = ?", jobId).Where("deleted_at = ''").Updates(updatedJob)
+	tx := storage.DB.Model(&Job{}).Where("id = ?", jobId).Where("deleted_at is null").Updates(updatedJob)
 	if tx.Error != nil {
 		return tx.Error
 	}
@@ -223,7 +223,7 @@ func UpdateJobConfig(jobId string, conf *schema.Conf) error {
 		return err
 	}
 	log.Infof("update job config [%v]", conf)
-	tx := storage.DB.Model(&Job{}).Where("id = ?", jobId).Where("deleted_at = ''").UpdateColumn("config", confJSON)
+	tx := storage.DB.Model(&Job{}).Where("id = ?", jobId).Where("deleted_at is null").UpdateColumn("config", confJSON)
 	if tx.Error != nil {
 		return tx.Error
 	}
@@ -268,7 +268,7 @@ func UpdateJob(jobID string, status schema.JobStatus, runtimeInfo, runtimeStatus
 		updatedJob.ActivatedAt.Valid = true
 	}
 	log.Debugf("update for job %s, updated content [%+v]", jobID, updatedJob)
-	tx := storage.DB.Table("job").Where("id = ?", jobID).Where("deleted_at = ''").Updates(&updatedJob)
+	tx := storage.DB.Table("job").Where("id = ?", jobID).Where("deleted_at is null").Updates(&updatedJob)
 	if tx.Error != nil {
 		log.Errorf("update job failed, err %v", tx.Error)
 		return "", tx.Error
@@ -277,7 +277,7 @@ func UpdateJob(jobID string, status schema.JobStatus, runtimeInfo, runtimeStatus
 }
 
 func ListQueueJob(queueID string, status []schema.JobStatus) []Job {
-	db := storage.DB.Table("job").Where("status in ?", status).Where("queue_id = ?", queueID).Where("deleted_at = ''")
+	db := storage.DB.Table("job").Where("status in ?", status).Where("queue_id = ?", queueID).Where("deleted_at is null")
 
 	var jobs []Job
 	err := db.Find(&jobs).Error
@@ -288,7 +288,7 @@ func ListQueueJob(queueID string, status []schema.JobStatus) []Job {
 }
 
 func ListQueueInitJob(queueID string) []Job {
-	db := storage.DB.Table("job").Where("queue_id = ?", queueID).Where("status = ?", schema.StatusJobInit).Where("deleted_at = ''")
+	db := storage.DB.Table("job").Where("queue_id = ?", queueID).Where("status = ?", schema.StatusJobInit).Where("deleted_at is null")
 
 	var jobs []Job
 	err := db.Find(&jobs).Error
@@ -310,7 +310,7 @@ func ListClusterJob(clusterID string, status schema.JobStatus) []Job {
 		queueIDs = append(queueIDs, q.ID)
 	}
 
-	db := storage.DB.Table("job").Where("queue_id in ?", queueIDs).Where("status = ?", status).Where("deleted_at = ''")
+	db := storage.DB.Table("job").Where("queue_id in ?", queueIDs).Where("status = ?", status).Where("deleted_at is null")
 	err := db.Find(&jobs).Error
 	if err != nil {
 		log.Errorf("list init jobs in cluster %s failed, err: %s", clusterID, err.Error())
@@ -320,7 +320,7 @@ func ListClusterJob(clusterID string, status schema.JobStatus) []Job {
 }
 
 func ListJobByStatus(status schema.JobStatus) []Job {
-	db := storage.DB.Table("job").Where("status = ?", status).Where("deleted_at = ''")
+	db := storage.DB.Table("job").Where("status = ?", status).Where("deleted_at is null")
 
 	var jobs []Job
 	if err := db.Find(&jobs).Error; err != nil {
@@ -332,7 +332,7 @@ func ListJobByStatus(status schema.JobStatus) []Job {
 
 func GetJobsByRunID(runID string, jobID string) ([]Job, error) {
 	var jobList []Job
-	query := storage.DB.Table("job").Where("id like ?", "job-"+runID+"-%").Where("deleted_at = ''")
+	query := storage.DB.Table("job").Where("id like ?", "job-"+runID+"-%").Where("deleted_at is null")
 	if jobID != "" {
 		query = query.Where("id = ?", jobID)
 	}
@@ -346,7 +346,7 @@ func GetJobsByRunID(runID string, jobID string) ([]Job, error) {
 
 func ListJobByUpdateTime(updateTime string) ([]Job, error) {
 	var jobList []Job
-	err := storage.DB.Table("job").Where("updated_at >= ?", updateTime).Where("deleted_at = ''").Find(&jobList).Error
+	err := storage.DB.Table("job").Where("updated_at >= ?", updateTime).Where("deleted_at is null").Find(&jobList).Error
 	if err != nil {
 		log.Errorf("list job by updateTime[%s] failed, error:[%s]", updateTime, err.Error())
 		return nil, err
@@ -356,7 +356,7 @@ func ListJobByUpdateTime(updateTime string) ([]Job, error) {
 
 func ListJobByParentID(parentID string) ([]Job, error) {
 	var jobList []Job
-	err := storage.DB.Table("job").Where("parent_job = ?", parentID).Where("deleted_at = ''").Find(&jobList).Error
+	err := storage.DB.Table("job").Where("parent_job = ?", parentID).Where("deleted_at is null").Find(&jobList).Error
 	if err != nil {
 		log.Errorf("list job by parentID[%s] failed, error:[%s]", parentID, err.Error())
 		return nil, err
@@ -366,7 +366,7 @@ func ListJobByParentID(parentID string) ([]Job, error) {
 
 func GetLastJob() (Job, error) {
 	job := Job{}
-	tx := storage.DB.Table("job").Where("deleted_at = ''").Last(&job)
+	tx := storage.DB.Table("job").Where("deleted_at is null").Last(&job)
 	if tx.Error != nil {
 		log.Errorf("get last job failed. error:%s", tx.Error.Error())
 		return Job{}, tx.Error
@@ -375,7 +375,7 @@ func GetLastJob() (Job, error) {
 }
 
 func ListJob(pk int64, maxKeys int, queue, status, startTime, timestamp, userFilter string, labels map[string]string) ([]Job, error) {
-	tx := storage.DB.Table("job").Where("pk > ?", pk).Where("parent_job = ''").Where("deleted_at = ''")
+	tx := storage.DB.Table("job").Where("pk > ?", pk).Where("parent_job is null").Where("deleted_at is null")
 	if userFilter != "root" {
 		tx = tx.Where("user_name = ?", userFilter)
 	}

@@ -117,7 +117,7 @@ func (queue *Queue) AfterFind(*gorm.DB) error {
 		// only single query is necessary, function of list query by join table cluster_info
 		log.Debugf("queue[%s] ClusterName is nil, query db to get cluster", queue.Name)
 		var cluster ClusterInfo
-		db := storage.DB.Table("cluster_info").Where("id = ?", queue.ClusterId).Where("deleted_at = '' ")
+		db := storage.DB.Table("cluster_info").Where("id = ?", queue.ClusterId).Where("deleted_at is null ")
 		if err := db.First(&cluster).Error; err != nil {
 			log.Errorf("queue[%s] query cluster by clusterId[%s] failed: %v", queue.Name, queue.ClusterId, err)
 			return err

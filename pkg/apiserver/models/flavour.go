@@ -159,9 +159,9 @@ func ListFlavour(pk int64, maxKeys int, clusterID, queryKey string) ([]Flavour, 
 	query := storage.DB.Table(flavourTableName).Where("flavour.pk > ?", pk).Select(flavourSelectColumn).Joins(flavourJoinCluster)
 
 	if clusterID != "" {
-		query.Where("`flavour`.`cluster_id` = ? or `flavour`.`cluster_id` = ''", clusterID)
+		query.Where("`flavour`.`cluster_id` = ? or `flavour`.`cluster_id` is null", clusterID)
 	} else {
-		query.Where("`flavour`.`cluster_id` = ''")
+		query.Where("`flavour`.`cluster_id` is null")
 	}
 
 	if !strings.EqualFold(queryKey, "") {
